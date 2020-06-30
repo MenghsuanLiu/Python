@@ -1,2 +1,2 @@
-# R
-R Language Practice
+# Python
+Python Practice
