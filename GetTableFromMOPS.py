@@ -34,21 +34,36 @@ table_Income = table[1]
 
 
 a = []
-for tr_flg in table_BalanceSheet.find_all("tr"):
-    for td_flg in tr_flg.find_all("td"):
-        for span_flg in td_flg.find_all("span", { "class" : "zh"}):
-            # print(span_flg.getText())
-            a.append(span_flg.getText().replace(u'\u3000',u' '))
-        if td_flg.find("span", { "class" : "zh"}):
-            continue
-        a.append(td_flg.getText())
+tb_tr = table_BalanceSheet.find_all("tr")
+
+for tr_flg in tb_tr:
+    tb_td = tr_flg.find_all("td")
+    rows_data = [tr_flg.text.replace(u'\u3000',u' ') for tr_flg in tb_td]
+    a.append(rows_data)
+    # print(rows_data)
+df_BalanceSheet = pd.DataFrame(a, columns=["代號", "會計項目", "2020/3/31", "2019/12/31", "2019/3/31"])
+df_BalanceSheet.to_csv("balance.csv", index=False)
+print(df_BalanceSheet)
+
+
+
+
+# for tr_flg in table_BalanceSheet.find_all("tr"):
+#     for td_flg in tr_flg.find_all("td"):
+#         for span_flg in td_flg.find_all("span", { "class" : "zh"}):
+#             # print(span_flg.getText())
+#             a.append(span_flg.getText().replace(u'\u3000',u' '))
+#         if td_flg.find("span", { "class" : "zh"}):
+#             continue
+#         a.append(td_flg.getText())
 
 # print(a)
 # df_BalanceSheet = pd.DataFrame(a, columns = ["a", "b", "c", "d", "e"])
 # df_BalanceSheet = pd.DataFrame(a)
 # print(df_BalanceSheet)
 
-
+# with open ("table.txt", mode = "w", encoding = "UTF-8") as table_html:
+#     table_html.write(str(a))
 
 # table_rows = root.find_all("tr")
 # print(type(table))
