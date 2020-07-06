@@ -33,16 +33,29 @@ table_BalanceSheet = table[0]
 table_Income = table[1]
 
 
-a = []
+detail = []
+head = []
 tb_tr = table_BalanceSheet.find_all("tr")
+i = 0
 
 for tr_flg in tb_tr:
     tb_td = tr_flg.find_all("td")
     rows_data = [tr_flg.text.replace(u'\u3000',u' ') for tr_flg in tb_td]
-    a.append(rows_data)
+    detail.append(rows_data)
     # print(rows_data)
-df_BalanceSheet = pd.DataFrame(a, columns=["代號", "會計項目", "2020/3/31", "2019/12/31", "2019/3/31"])
-df_BalanceSheet.to_csv("balance.csv", index=False)
+
+for th_flg in tb_tr:
+    for span_flg in th_flg.find_all("th"):
+        i += 1
+        if i == 1:
+            continue
+        for tb_th in span_flg.find_all("span", {"class":"zh"}):
+            head.append(tb_th.getText())
+
+# print(head)
+df_BalanceSheet = pd.DataFrame(detail, columns = head)
+# df_BalanceSheet = pd.DataFrame(detail, columns=["代號", "會計項目", "2020/3/31", "2019/12/31", "2019/3/31"])
+# df_BalanceSheet.to_csv("balance.csv", index=False)
 print(df_BalanceSheet)
 
 
