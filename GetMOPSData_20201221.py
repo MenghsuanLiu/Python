@@ -30,11 +30,15 @@ with open ("web_source.html", mode = "w", encoding = "UTF-8") as web_html:
 
 #取所有table
 tb = root.find_all("table")
-#取第一個table
+#取第一個table(BalanceSheet)
 tb_BalanceSheet = tb[0]
 with open ("web_tb1.html", mode = "w", encoding = "UTF-8") as web_html:
     web_html.write(tb_BalanceSheet.prettify())
-
+#取第二個table(Statement of Comprehensive Income)
+tb_ComprehensiveIncome = tb[1]
+with open ("web_tb2.html", mode = "w", encoding = "UTF-8") as web_html:
+    web_html.write(tb_ComprehensiveIncome.prettify())
+    
 ymd = GL = GL_Desc =  data_list =[]
 GL_Level = amtvalue = 0
 
@@ -70,12 +74,41 @@ for rows in tb_BalanceSheet.select("tr")[1:]:
                 amtvalue = tag_pre.text.replace(",", "").replace("(", "-").replace(")", "")
         else:
             amtvalue = 0
-    if GL != []:
-        # print(company, "\t", ymd, "\t", GL if GL != None else " " , "\t", GL_Level, GL_Desc, "\t", int(amtvalue))        
-        list = [str(company), ymd, GL if GL != None else " ", GL_Desc, GL_Level, int(amtvalue)]
+    if GL != [] and GL != None:
+        print(company, "\t", ymd, "\t", GL if GL != None else " " , "\t", GL_Level, GL_Desc, "\t", float(amtvalue))        
+        list = [str(company), ymd, GL if GL != None else " ", GL_Desc, GL_Level, float(amtvalue)]
         data_list.append(list)
 # df_BalanceSheet = pd.DataFrame(data_list)
 # print(df_BalanceSheet)
+
+# 從第三個Row開始loop起(Row 1 = 綜合損益表)
+for rows in tb_ComprehensiveIncome.select("tr")[2:]:
+    # 抓資料的Column 1[會科]
+    for col1 in rows.select("td:nth-child(1)"):
+        GL = col1.string
+    # 抓資料的Column 2[會科說明]    
+    for col2 in rows.select("td:nth-child(2) > .zh"):        
+        GL_Desc = col2.string.strip()
+        # 由全型空白(ascii = 12288)判斷階層
+        GL_Level = col2.string.count("　")
+        # GL_Level = 0
+        # for i in col2.string:
+        #     if ord(i) == 12288:
+        #         GL_Level += 1
+    # 抓資料的Column 3[指定季的金額]   
+    for col3 in rows.select("td:nth-child(3)"):
+        tag_pre = col3.find("pre")
+        if tag_pre != None:
+            if tag_pre.text[0].isnumeric():
+                amtvalue = tag_pre.text.replace(",", "")
+            else:
+                amtvalue = tag_pre.text.replace(",", "").replace("(", "-").replace(")", "")
+        else:
+            amtvalue = 0
+    if GL != [] and GL != None:
+        print(company, "\t", ymd, "\t", GL if GL != None else " " , "\t", GL_Level, GL_Desc, "\t", float(amtvalue))        
+        list = [str(company), ymd, GL if GL != None else " ", GL_Desc, GL_Level, float(amtvalue)]
+        data_list.append(list)
 
 conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "8AEISS01", database = "BIDC", user = "owner_sap", password = "sap@@20166")
 cursor = conn_sql.cursor()
@@ -87,26 +120,25 @@ for list in data_list:
     cursor.execute(SQLCommand, value)
     conn_sql.commit()
 conn_sql.close()
-"""
-#取所有table
+
+
+
+
+""" #取所有table
 table = root.find_all("table")
 #取第一個table
 table_BalanceSheet = table[0]
 #取第二個table
 table_Income = table[1]
-
-
 detail = []
 head = []
 tb_tr = table_BalanceSheet.find_all("tr")
 i = 0
-
 for tr_flg in tb_tr:
     tb_td = tr_flg.find_all("td")
     rows_data = [tr_flg.text.replace(u'\u3000',u' ') for tr_flg in tb_td]
     detail.append(rows_data)
     # print(rows_data)
-
 for th_flg in tb_tr:
     for span_flg in th_flg.find_all("th"):
         i += 1
@@ -114,42 +146,40 @@ for th_flg in tb_tr:
             continue
         for tb_th in span_flg.find_all("span", {"class":"zh"}):
             head.append(tb_th.getText())
-
 # print(head)
 df_BalanceSheet = pd.DataFrame(detail, columns = head)
 # df_BalanceSheet = pd.DataFrame(detail, columns=["代號", "會計項目", "2020/3/31", "2019/12/31", "2019/3/31"])
 # df_BalanceSheet.to_csv("balance.csv", index=False)
 print(df_BalanceSheet)
-"""
 
 
-# for tr_flg in table_BalanceSheet.find_all("tr"):
-#     for td_flg in tr_flg.find_all("td"):
-#         for span_flg in td_flg.find_all("span", { "class" : "zh"}):
-#             # print(span_flg.getText())
-#             a.append(span_flg.getText().replace(u'\u3000',u' '))
-#         if td_flg.find("span", { "class" : "zh"}):
-#             continue
-#         a.append(td_flg.getText())
+for tr_flg in table_BalanceSheet.find_all("tr"):
+    for td_flg in tr_flg.find_all("td"):
+        for span_flg in td_flg.find_all("span", { "class" : "zh"}):
+            # print(span_flg.getText())
+            a.append(span_flg.getText().replace(u'\u3000',u' '))
+        if td_flg.find("span", { "class" : "zh"}):
+            continue
+        a.append(td_flg.getText())
 
-# print(a)
-# df_BalanceSheet = pd.DataFrame(a, columns = ["a", "b", "c", "d", "e"])
-# df_BalanceSheet = pd.DataFrame(a)
-# print(df_BalanceSheet)
+print(a)
+df_BalanceSheet = pd.DataFrame(a, columns = ["a", "b", "c", "d", "e"])
+df_BalanceSheet = pd.DataFrame(a)
+print(df_BalanceSheet)
 
-# with open ("table.txt", mode = "w", encoding = "UTF-8") as table_html:
-#     table_html.write(str(a))
+with open ("table.txt", mode = "w", encoding = "UTF-8") as table_html:
+    table_html.write(str(a))
 
-# table_rows = root.find_all("tr")
-# print(type(table))
+table_rows = root.find_all("tr")
+print(type(table))
 
-# with open ("table_BalanceSheet.html", mode = "w", encoding = "UTF-8") as table_html:
-#     table_html.write(str(table_BalanceSheet))
-# with open ("table_Income.html", mode = "w", encoding = "UTF-8") as table_html:
-#     table_html.write(str(table_Income))
+with open ("table_BalanceSheet.html", mode = "w", encoding = "UTF-8") as table_html:
+    table_html.write(str(table_BalanceSheet))
+with open ("table_Income.html", mode = "w", encoding = "UTF-8") as table_html:
+    table_html.write(str(table_Income))
 
 
 
 # with open ("table.html", mode = "w", encoding = "UTF-8") as table_html:
 #     table_html.write(str(table))
-# print(table.tr)
+# print(table.tr) """
