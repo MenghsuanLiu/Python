@@ -2,6 +2,7 @@ import urllib.request as req
 from bs4 import BeautifulSoup as bs
 import pandas as pd
 import numpy as np
+import pyodbc as odbc
 
 
 
@@ -34,7 +35,7 @@ tb_BalanceSheet = tb[0]
 with open ("web_tb1.html", mode = "w", encoding = "UTF-8") as web_html:
     web_html.write(tb_BalanceSheet.prettify())
 
-ymd = GL = GL_Desc =  []
+ymd = GL = GL_Desc =  data_list =[]
 GL_Level = amtvalue = 0
 
 # 從第二個Row開始loop起(Row 1 = 資產負債表)
@@ -54,10 +55,11 @@ for rows in tb_BalanceSheet.select("tr")[1:]:
     for col2 in rows.select("td:nth-child(2) > .zh"):        
         GL_Desc = col2.string.strip()
         # 由全型空白(ascii = 12288)判斷階層
-        GL_Level = 0
-        for i in col2.string:
-            if ord(i) == 12288:
-                GL_Level += 1
+        GL_Level = col2.string.count("　")
+        # GL_Level = 0
+        # for i in col2.string:
+        #     if ord(i) == 12288:
+        #         GL_Level += 1
     # 抓資料的Column 3[指定季的金額]   
     for col3 in rows.select("td:nth-child(3)"):
         tag_pre = col3.find("pre")
@@ -69,9 +71,22 @@ for rows in tb_BalanceSheet.select("tr")[1:]:
         else:
             amtvalue = 0
     if GL != []:
-        print(company, "\t", ymd, "\t", GL if GL != None else " " , "\t", GL_Level, GL_Desc, "\t", int(amtvalue))
+        # print(company, "\t", ymd, "\t", GL if GL != None else " " , "\t", GL_Level, GL_Desc, "\t", int(amtvalue))        
+        list = [str(company), ymd, GL if GL != None else " ", GL_Desc, GL_Level, int(amtvalue)]
+        data_list.append(list)
+# df_BalanceSheet = pd.DataFrame(data_list)
+# print(df_BalanceSheet)
+
+conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "8AEISS01", database = "BIDC", user = "owner_sap", password = "sap@@20166")
+cursor = conn_sql.cursor()
+SQLCommand = ("INSERT INTO BIDC.dbo.outCompanyBalanceSheet (StockID, Date, GLAccount, GLAccountDesc, Hierarchy, Amount) VALUES (?, ?, ?, ?, ?, ? );")
 
 
+for list in data_list:    
+    value = [ list[0], list[1], list[2], list[3], list[4], list[5] ]
+    cursor.execute(SQLCommand, value)
+    conn_sql.commit()
+conn_sql.close()
 """
 #取所有table
 table = root.find_all("table")
