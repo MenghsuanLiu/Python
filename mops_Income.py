@@ -23,12 +23,9 @@ for catg in stockcatg:
     root =  bs(webdata, "lxml")
     with open ("web_source_" + catg + ".html", mode = "w", encoding = "UTF-8") as web_html:
         web_html.write(root.prettify())
-    #取所有table
-    tb = root.find_all("table")
-    tb = root.findAll("th", text = rex.compile(".*半導體"))
-    print(tb)
-    break
- 
-    # for a in tb:
-    #     tb_select = a.select("th > .tt", text = rex.compile("^產業別"))
-    #     print(tb_select)
+    #取半導體的table
+    tb = root.find("th", text = rex.compile(".*半導體")).find_parent("table")
+    # tb = tb.find_parent("table")
+
+    print(tb.text)
+    print("------------------------")
