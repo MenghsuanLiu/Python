@@ -18,7 +18,8 @@ url_tmp = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_" + str(ym) + "_0.html"
 for catg in stockcatg:
     data_head = [] 
     data_item = []
-    
+    yyyymm = ym.split("_")
+    yyyymm = str(int(yyyymm[0]) + 1911) + "/" + str(yyyymm[1]) + "/1"
 
     url = url_tmp.format(catg)
     urlwithhead = req.get(url, headers = head_info)
@@ -34,7 +35,7 @@ for catg in stockcatg:
         web_html.write(tb.prettify())
 
     for head_line1 in tb.select("table > tr:nth-child(1) > th:nth-child(4)"):
-        data_head.append("年月")
+        data_head.append("資料年月")
         for head_line2 in tb.select("table > tr:nth-child(2) > th"):
             # print(re.sub('<br\s*?>', ' ', head_line2.text))
             data_head.append(re.sub('<br\s*?>', ' ', head_line2.text))
@@ -69,11 +70,12 @@ for catg in stockcatg:
         for col11 in rows.select("td:nth-child(11)"):
             Remark = col11.string.strip()            
         if StockID != []: 
-            collect = [ym, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark]
+            collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark]
             data_item.append(collect)
 
     df_imcome = pd.DataFrame(data_item, columns = data_head)
     # print(df_imcome)
 
     file_name = "{}_{}.csv".format(catg, ym)
-    df_imcome.to_csv(file_name, encoding = "UTF-8", index = False )
+    df_imcome.to_csv("download_data/" + file_name + "_UTF8", encoding = "UTF-8", index = False )
+    df_imcome.to_csv("download_data/" + file_name + "_BIG5", encoding = "BIG5", index = False )
