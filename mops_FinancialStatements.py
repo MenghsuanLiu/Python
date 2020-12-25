@@ -25,19 +25,21 @@ with req.urlopen(urlwithhead) as respon:
     webdata = respon.read().decode("big5")
 #寫網頁原始碼到檔案中
 root =  bs(webdata, "lxml")
-with open ("web_source.html", mode = "w", encoding = "UTF-8") as web_html:
-    web_html.write(root.prettify())
+# with open ("web_source.html", mode = "w", encoding = "UTF-8") as web_html:
+#     web_html.write(root.prettify())
 
 #取所有table
 tb = root.find_all("table")
+
 #取第一個table(BalanceSheet)
 tb_BalanceSheet = tb[0]
-with open ("web_tb1.html", mode = "w", encoding = "UTF-8") as web_html:
-    web_html.write(tb_BalanceSheet.prettify())
+# with open ("web_tb1.html", mode = "w", encoding = "UTF-8") as web_html:
+#     web_html.write(tb_BalanceSheet.prettify())
+
 #取第二個table(Statement of Comprehensive Income)
 tb_ComprehensiveIncome = tb[1]
-with open ("web_tb2.html", mode = "w", encoding = "UTF-8") as web_html:
-    web_html.write(tb_ComprehensiveIncome.prettify())
+# with open ("web_tb2.html", mode = "w", encoding = "UTF-8") as web_html:
+#     web_html.write(tb_ComprehensiveIncome.prettify())
     
 ymd = GL = GL_Desc =  data_list =[]
 GL_Level = amtvalue = 0
@@ -46,12 +48,16 @@ GL_Level = amtvalue = 0
 for rows in tb_BalanceSheet.select("tr")[1:]:
     # 抓出年月日(表頭,抓第三欄為指定季的最後一天)
     for th_col3 in rows.select("th:nth-child(3) > .en"):
-        ym_list = th_col3.string.split("/", 2)       
-        if ym_list is not None: 
-            if int(ym_list[1]) < 10:
-                ym_list[1] = "0" + ym_list[1]
-            ymd = "".join(ym_list)
+        ym_list = th_col3.string.replace("/", "-")
+        if ym_list is not None:
+            ymd = ym_list
             break
+        # ym_list = th_col3.string.split("/", 2)       
+        # if ym_list is not None: 
+        #     if int(ym_list[1]) < 10:
+        #         ym_list[1] = "0" + ym_list[1]
+        #     ymd = "".join(ym_list)
+        #     break
     # 抓資料的Column 1[會科]
     for col1 in rows.select("td:nth-child(1)"):
         GL = col1.string
@@ -75,7 +81,7 @@ for rows in tb_BalanceSheet.select("tr")[1:]:
         else:
             amtvalue = 0
     if GL != [] and GL != None:
-        print(company, "\t", ymd, "\t", GL if GL != None else " " , "\t", GL_Level, GL_Desc, "\t", float(amtvalue))        
+        # print(company, "\t", ymd, "\t", GL if GL != None else " " , "\t", GL_Level, GL_Desc, "\t", float(amtvalue))        
         list = [str(company), ymd, GL if GL != None else " ", GL_Desc, GL_Level, float(amtvalue)]
         data_list.append(list)
 # df_BalanceSheet = pd.DataFrame(data_list)
@@ -106,18 +112,23 @@ for rows in tb_ComprehensiveIncome.select("tr")[2:]:
         else:
             amtvalue = 0
     if GL != [] and GL != None:
-        print(company, "\t", ymd, "\t", GL if GL != None else " " , "\t", GL_Level, GL_Desc, "\t", float(amtvalue))        
+        # print(company, "\t", ymd, "\t", GL if GL != None else " " , "\t", GL_Level, GL_Desc, "\t", float(amtvalue))        
         list = [str(company), ymd, GL if GL != None else " ", GL_Desc, GL_Level, float(amtvalue)]
         data_list.append(list)
 
-conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "8AEISS01", database = "BIDC", user = "owner_sap", password = "sap@@20166")
+conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "sap@@20166")
 cursor = conn_sql.cursor()
-SQLCommand = ("INSERT INTO BIDC.dbo.outCompanyBalanceSheet (StockID, Date, GLAccount, GLAccountDesc, Hierarchy, Amount) VALUES (?, ?, ?, ?, ?, ? );")
+SQL_Insert = ("INSERT INTO BIDC.dbo.mopsGLAccountDataByCompany (StockID, ReportDate, GLAccount, GLAccountDesc, Hierarchy, Amount) VALUES (?, ?, ?, ?, ?, ? );")
+SQL_Delete = ("DELETE FROM BIDC.dbo.mopsGLAccountDataByCompany WHERE ReportDate = '" + ymd + "' AND StockID = '" + str(company) +"'")
 
 
+# 先刪資料
+cursor.execute(SQL_Delete)
+conn_sql.commit()
+# Insart資料
 for list in data_list:    
     value = [ list[0], list[1], list[2], list[3], list[4], list[5] ]
-    cursor.execute(SQLCommand, value)
+    cursor.execute(SQL_Insert, value)
     conn_sql.commit()
 conn_sql.close()
 
@@ -151,8 +162,6 @@ df_BalanceSheet = pd.DataFrame(detail, columns = head)
 # df_BalanceSheet = pd.DataFrame(detail, columns=["代號", "會計項目", "2020/3/31", "2019/12/31", "2019/3/31"])
 # df_BalanceSheet.to_csv("balance.csv", index=False)
 print(df_BalanceSheet)
-
-
 for tr_flg in table_BalanceSheet.find_all("tr"):
     for td_flg in tr_flg.find_all("td"):
         for span_flg in td_flg.find_all("span", { "class" : "zh"}):
@@ -161,25 +170,18 @@ for tr_flg in table_BalanceSheet.find_all("tr"):
         if td_flg.find("span", { "class" : "zh"}):
             continue
         a.append(td_flg.getText())
-
 print(a)
 df_BalanceSheet = pd.DataFrame(a, columns = ["a", "b", "c", "d", "e"])
 df_BalanceSheet = pd.DataFrame(a)
 print(df_BalanceSheet)
-
 with open ("table.txt", mode = "w", encoding = "UTF-8") as table_html:
     table_html.write(str(a))
-
 table_rows = root.find_all("tr")
 print(type(table))
-
 with open ("table_BalanceSheet.html", mode = "w", encoding = "UTF-8") as table_html:
     table_html.write(str(table_BalanceSheet))
 with open ("table_Income.html", mode = "w", encoding = "UTF-8") as table_html:
     table_html.write(str(table_Income))
-
-
-
 # with open ("table.html", mode = "w", encoding = "UTF-8") as table_html:
 #     table_html.write(str(table))
 # print(table.tr) """
