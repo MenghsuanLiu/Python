@@ -5,16 +5,16 @@ from bs4 import BeautifulSoup as bs
 import pandas as pd
 
 # 年月
-ym = ["109_9", "109_10", "109_11"]
-# ym = "109_11"
+# ym = ["109_9", "109_10", "109_11"]
+ym = "109_11"
 # 股票類別(sii = 上市, otc = 上櫃)
 stockcatg = ["sii", "otc"]
 
 head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
 
 
-url_tmp = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_{}_0.html"
-# url_tmp = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_" + str(ym) + "_0.html"
+# url_tmp = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_{}_0.html"
+url_tmp = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_" + str(ym) + "_0.html"
 for catg in stockcatg:
     data_head = [] 
     data_item = []
@@ -34,12 +34,14 @@ for catg in stockcatg:
         web_html.write(tb.prettify())
 
     for head_line1 in tb.select("table > tr:nth-child(1) > th:nth-child(4)"):
+        data_head.append("年月")
         for head_line2 in tb.select("table > tr:nth-child(2) > th"):
             # print(re.sub('<br\s*?>', ' ', head_line2.text))
             data_head.append(re.sub('<br\s*?>', ' ', head_line2.text))
         # print(head_line1.text)
         data_head.append(head_line1.text)
     # print(data_head)
+
     # 從第3個Row開始loop起(Row 3 以後是資料)
     for rows in tb.select("table > tr")[2:]:
         StockID = StockName = Remark = []
@@ -67,7 +69,7 @@ for catg in stockcatg:
         for col11 in rows.select("td:nth-child(11)"):
             Remark = col11.string.strip()            
         if StockID != []: 
-            collect = [StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark]
+            collect = [ym, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark]
             data_item.append(collect)
 
     df_imcome = pd.DataFrame(data_item, columns = data_head)
