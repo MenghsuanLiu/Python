@@ -3,10 +3,14 @@ import requests as req
 import re
 from bs4 import BeautifulSoup as bs
 import pandas as pd
+import datetime
 
-# 年月
+# 年月(用今天去抓前一個月)
 # ym = ["109_9", "109_10", "109_11"]
-ym = "109_11"
+premonth = (datetime.date(datetime.date.today().year, datetime.date.today().month, 1) - datetime.timedelta(days = 1))
+ym =  str( premonth.year - 1911 ) + "_" + str(premonth.month if premonth.month > 9 else str(premonth.month)[1:])
+
+# ym = "109_11"
 # 股票類別(sii = 上市, otc = 上櫃)
 stockcatg = ["sii", "otc"]
 
