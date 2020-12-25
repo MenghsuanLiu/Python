@@ -5,16 +5,16 @@ from bs4 import BeautifulSoup as bs
 import pandas as pd
 
 # 年月
-# ym = ["109_9", "109_10", "109_11"]
-ym = "109_11"
+ym = ["109_9", "109_10", "109_11"]
+# ym = "109_11"
 # 股票類別(sii = 上市, otc = 上櫃)
 stockcatg = ["sii", "otc"]
 
 head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
 
 
-# url_tmp = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_{}_0.html"
-url_tmp = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_" + str(ym) + "_0.html"
+url_tmp = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_{}_0.html"
+# url_tmp = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_" + str(ym) + "_0.html"
 for catg in stockcatg:
     data_head = [] 
     data_item = []
@@ -74,4 +74,4 @@ for catg in stockcatg:
     # print(df_imcome)
 
     file_name = "{}_{}.csv".format(catg, ym)
-    df_imcome.to_csv(file_name, encoding = "UTF-8")
+    df_imcome.to_csv(file_name, encoding = "UTF-8", index = False )
