@@ -7,10 +7,11 @@ import datetime
 
 # 年月(用今天去抓前一個月)
 # ym = ["109_9", "109_10", "109_11"]
+# ym = "109_11"
 premonth = (datetime.date(datetime.date.today().year, datetime.date.today().month, 1) - datetime.timedelta(days = 1))
 ym =  str( premonth.year - 1911 ) + "_" + str(premonth.month if premonth.month > 9 else str(premonth.month)[1:])
+yyyymm = datetime.date(premonth.year, premonth.month, 1)
 
-# ym = "109_11"
 # 股票類別(sii = 上市, otc = 上櫃)
 stockcatg = ["sii", "otc"]
 
@@ -22,8 +23,8 @@ url_tmp = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_" + str(ym) + "_0.html"
 for catg in stockcatg:
     data_head = [] 
     data_item = []
-    yyyymm = ym.split("_")
-    yyyymm = str(int(yyyymm[0]) + 1911) + "/" + str(yyyymm[1]) + "/1"
+    # yyyymm = ym.split("_")
+    # yyyymm = str(int(yyyymm[0]) + 1911) + "/" + str(yyyymm[1]) + "/1"
 
     url = url_tmp.format(catg)
     urlwithhead = req.get(url, headers = head_info)
