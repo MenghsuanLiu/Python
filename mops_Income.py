@@ -11,21 +11,22 @@ import pyodbc as odbc
 premonth = (datetime.date(datetime.date.today().year, datetime.date.today().month, 1) - datetime.timedelta(days = 1))
 ## ym要用list包起來
 ym = [str( premonth.year - 1911 ) + "_" + str(premonth.month if premonth.month > 9 else str(premonth.month)[1:])]
-# ym = ["108_1", "108_2", "108_3", "108_4", "108_5", "108_6", "108_7", "108_8", "108_9", "108_10", "108_11", "108_12"]
+# ym = ["109_1", "109_2", "109_3", "109_4", "109_5", "109_6", "109_7", "109_8", "109_9", "109_10", "109_11"]
 # yyyymm = datetime.date(premonth.year, premonth.month, 1)
 
 # 股票類別(sii = 上市(listed company at stock exchange market), otc = 上櫃(listed company at over-the-counter market), rotc = 興櫃)
 stockcatg = ["sii", "otc", "rotc"]
 
 head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
-downloadpath = "download_file"
 
 url_model = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_{}_0.html"
-
+# 連結MS SQL資訊
 conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "sap@@20166")
 cursor = conn_sql.cursor()
 
-# 建立目錄
+# 存成檔案時的目錄
+downloadpath = "download_file"
+# 建立目錄,不存在才建...
 # try:
 #     os.makedirs(downloadpath)
 # except FileExistsError:
@@ -38,23 +39,23 @@ for catg in stockcatg:
     for period in ym:
         data_head = [] 
         data_item = []
-
+# 取得存入資料庫/檔案的資料年月
         yyyymm = period.split("_")
         yyyymm = str(int(yyyymm[0]) + 1911) + "-" + str(yyyymm[1]) + "-1"
-
+# 處理網址
         url = url_model.format(catg, period)
         urlwithhead = req.get(url, headers = head_info)
         urlwithhead.encoding = "big5"
         
-        #寫網頁原始碼到檔案中
+# 寫網頁原始碼到檔案中
         root =  bs(urlwithhead.text, "lxml")
         with open ("html_data/imcome_" + catg + ".html", mode = "w", encoding = "UTF-8") as web_html:
             web_html.write(root.prettify())
-        #取半導體的table
+# 取半導體的table
         tb = root.find("th", text = re.compile(".*半導體")).find_parent("table")
         with open ("html_data/tb_semi_" + catg + ".html", mode = "w", encoding = "UTF-8") as web_html:
             web_html.write(tb.prettify())
-
+# 取得表頭資訊
         for head_line1 in tb.select("table > tr:nth-child(1) > th:nth-child(4)"):
             data_head.append("資料年月")
             for head_line2 in tb.select("table > tr:nth-child(2) > th"):
@@ -65,7 +66,7 @@ for catg in stockcatg:
             data_head.append("上市/上櫃")
         # print(data_head)
         
-        # 從第3個Row開始loop起(Row 3 以後是資料)
+# 從第3個Row開始loop起(Row 3 以後是資料)
         for rows in tb.select("table > tr")[2:]:
             StockID = StockName = Remark = []
             CurrRevenue = LastRevenue = YoYRevenue = LastPercent = YoYPercent = CurrCount = LastCount = DiffPercent = 0
