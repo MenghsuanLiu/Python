@@ -1,3 +1,4 @@
+import os
 from os import replace
 import requests as req
 import re
@@ -13,16 +14,25 @@ ym = [str( premonth.year - 1911 ) + "_" + str(premonth.month if premonth.month >
 # ym = ["108_1", "108_2", "108_3", "108_4", "108_5", "108_6", "108_7", "108_8", "108_9", "108_10", "108_11", "108_12"]
 # yyyymm = datetime.date(premonth.year, premonth.month, 1)
 
-# 股票類別(sii = 上市(listed company at stock exchange market), otc = 上櫃(listed company at over-the-counter market))
-stockcatg = ["sii", "otc"]
+# 股票類別(sii = 上市(listed company at stock exchange market), otc = 上櫃(listed company at over-the-counter market), rotc = 興櫃)
+stockcatg = ["sii", "otc", "rotc"]
 
 head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
-
+downloadpath = "download_file"
 
 url_model = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_{}_0.html"
-# url_tmp = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_" + str(ym) + "_0.html"
+
 conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "sap@@20166")
 cursor = conn_sql.cursor()
+
+# 建立目錄
+# try:
+#     os.makedirs(downloadpath)
+# except FileExistsError:
+#     print("目錄已存在,不需重新建立!")
+# # 權限不足的例外處理
+# except PermissionError:
+#     print("權限不足!")
 
 for catg in stockcatg:
     for period in ym:
@@ -98,12 +108,10 @@ for catg in stockcatg:
                 data_item.append(collect)
 # 寫資料到File
         # df_imcome = pd.DataFrame(data_item, columns = data_head)
-        # # print(df_imcome)      
-        
+        # # print(df_imcome)
         # file_name = "{}_{}".format(catg, period)
-        # df_imcome.to_csv("download_data/" + file_name + "_UTF8.csv", encoding = "UTF-8", index = False )
-        # df_imcome.to_csv("download_data/" + file_name + "_BIG5.csv", encoding = "BIG5", index = False )
-        
+        # df_imcome.to_csv(downloadpath + "/" + file_name + "_UTF8.csv", encoding = "UTF-8", index = False )
+        # df_imcome.to_csv(downloadpath + "/" + file_name + "_BIG5.csv", encoding = "BIG5", index = False ) 
 
 # 寫資料到MS SQL(Revenue)        
         SQL_Insert = ("INSERT INTO BIDC.dbo.mopsRevenueByCompany (YearMonth, StockGroup, StockID, Revenue, Remark) VALUES (?, ?, ?, ?, ?);")
