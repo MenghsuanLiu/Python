@@ -7,11 +7,12 @@ import pandas as pd
 import datetime
 import pyodbc as odbc
 
+
 # 年月(用今天去抓前一個月)
 premonth = (datetime.date(datetime.date.today().year, datetime.date.today().month, 1) - datetime.timedelta(days = 1))
 ## ym要用list包起來
 ym = [str( premonth.year - 1911 ) + "_" + str(premonth.month if premonth.month > 9 else str(premonth.month)[1:])]
-ym = ["109_1", "109_2", "109_3", "109_4", "109_5", "109_6", "109_7", "109_8", "109_9", "109_10", "109_11"]
+# ym = ["109_1", "109_2", "109_3", "109_4", "109_5", "109_6", "109_7", "109_8", "109_9", "109_10", "109_11"]
 # yyyymm = datetime.date(premonth.year, premonth.month, 1)
 
 # 股票類別(sii = 上市(listed company at stock exchange market), otc = 上櫃(listed company at over-the-counter market), rotc = 興櫃)
@@ -30,6 +31,10 @@ if os.path.exists(file_path) == False:
     os.makedirs(file_path)
 if os.path.exists(web_path) == False:
     os.makedirs(web_path)
+
+# 連結MS SQL資訊
+conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "sap@@20166")
+cursor = conn_sql.cursor()   
 
 data_head = []
 data_item = []
@@ -108,24 +113,13 @@ for catg in stockcatg:
                 if StockID != []: 
                     collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark, catg]
                     data_item.append(collect)
-# 寫資料到File
-# df_imcome = pd.DataFrame(data_item, columns = data_head)
-# # print(df_imcome)
-# # file_name = "{}_{}_{}".format(ind, catg, period)
-# for en in ["UTF-8", "BIG5"]:
-#     # df_imcome.to_csv(file_path + "/" + file_name + "_" + en.replace("-", "") + ".csv", encoding = en, index = False )
-#     df_imcome.to_csv(file_path + "/revenue_" + en.replace("-", "") + ".csv", encoding = en, index = False )
-
+""" # 先刪資料(不能放到Loop外面刪)
+        SQL_Delete = ("DELETE FROM BIDC.dbo.mopsRevenueByCompany WHERE YearMonth = '" + yyyymm + "' AND StockGroup = '" + catg + "'")
+        
+        cursor.execute(SQL_Delete)
+        conn_sql.commit()
 # 寫資料到MS SQL(Revenue)
-# 連結MS SQL資訊
-conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "sap@@20166")
-cursor = conn_sql.cursor()   
 SQL_Insert = ("INSERT INTO BIDC.dbo.mopsRevenueByCompany (YearMonth, StockGroup, StockID, Revenue, Remark) VALUES (?, ?, ?, ?, ?);")
-SQL_Delete = ("DELETE FROM BIDC.dbo.mopsRevenueByCompany WHERE YearMonth = '" + yyyymm + "' AND StockGroup = '" + catg + "'")
-
-# 先刪資料
-cursor.execute(SQL_Delete)
-conn_sql.commit()
 # Insart資料
 for list in data_item:
     value = [ list[0], list[12], list[1], list[3]*1000, list[11] ]
@@ -133,4 +127,14 @@ for list in data_item:
     conn_sql.commit()
 # print(yyyymm + "(" + catg +")" + "Update Complete!!")
 print("Update Complete!!")
-conn_sql.close()
+conn_sql.close() """
+
+# 寫資料到File
+df_imcome = pd.DataFrame(data_item, columns = data_head)
+# print(df_imcome)
+# file_name = "{}_{}_{}".format(ind, catg, period)
+for en in ["UTF-8", "BIG5"]:
+    # df_imcome.to_csv(file_path + "/" + file_name + "_" + en.replace("-", "") + ".csv", encoding = en, index = False )
+    df_imcome.to_csv(file_path + "/revenue_" + en.replace("-", "") + ".csv", encoding = en, index = False )
+
+df_imcome.to_excel(file_path + "/revenue.xlsx", index = False)
