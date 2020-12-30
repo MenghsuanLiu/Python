@@ -7,7 +7,6 @@ import pandas as pd
 import datetime
 import pyodbc as odbc
 
-
 # 年月(用今天去抓前一個月)
 premonth = (datetime.date(datetime.date.today().year, datetime.date.today().month, 1) - datetime.timedelta(days = 1))
 ## ym要用list包起來 
@@ -130,9 +129,7 @@ conn_sql.close() """
 
 # 寫資料到File
 df_imcome = pd.DataFrame(data_item, columns = data_head)
-# df_company = pd.DataFrame(data_item[1:2], columns = ["StockID", "StockName"])
-print(type(data_item))
-quit()
+
 # print(df_imcome)
 # file_name = "{}_{}_{}".format(ind, catg, period)
 # for en in ["UTF-8", "BIG5"]:
@@ -140,3 +137,7 @@ quit()
 #     df_imcome.to_csv(file_path + "/revenue_" + en.replace("-", "") + ".csv", encoding = en, index = False )
 
 df_imcome.to_excel(file_path + "/revenue.xlsx", index = False)
+
+# 寫資料到MS SQL(Company)
+df_company = df_imcome.iloc[:, [1, 2, 12, 13]]
+df_company = df_company.rename(columns = {"公司代號": "StockID", "公司名稱": "StockName", "上市/上櫃": "Market", "產業": "Industry"}, inplace = False)
