@@ -4,6 +4,7 @@ import requests as req
 import re
 from bs4 import BeautifulSoup as bs
 import pandas as pd
+import numpy as np
 import datetime
 import pyodbc as odbc
 
@@ -12,10 +13,12 @@ premonth = (datetime.date(datetime.date.today().year, datetime.date.today().mont
 ## ym要用list包起來 
 ym = [str( premonth.year - 1911 ) + "_" + str(premonth.month if premonth.month > 9 else str(premonth.month)[1:])]
 # ym = ["109_1", "109_2", "109_3", "109_4", "109_5", "109_6", "109_7", "109_8", "109_9", "109_10", "109_11"]
+ym = ["109_1", "109_2"]
 # yyyymm = datetime.date(premonth.year, premonth.month, 1)
 
 # 股票類別(sii = 上市(listed company at stock exchange market), otc = 上櫃(listed company at over-the-counter market), rotc = 興櫃)
 stockcatg = ["sii", "otc", "rotc", "pub"]
+stockcatg = ["sii"]
 industy = ["半導體", "電子工業"]
 head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
 
@@ -31,11 +34,12 @@ if os.path.exists(web_path) == False:
     os.makedirs(web_path)
 
 # 連結MS SQL資訊
-conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "sap@@20166")
-cursor = conn_sql.cursor()   
+# conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "sap@@20166")
+# cursor = conn_sql.cursor()   
 
 data_head = []
 data_item = []
+data_company = []
 
 for catg in stockcatg:
     for period in ym:
@@ -111,6 +115,13 @@ for catg in stockcatg:
                 if StockID != []: 
                     collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark, market, cmpindusty]
                     data_item.append(collect)
+                    
+                    # collect = [StockID, StockName, market, cmpindusty]
+                    # if data_company == []:
+                    #     data_company.append(collect)
+                    # else:
+                    #     for i in data_company:    
+                    # data_company.append(collect)          
 """ # 先刪資料(不能放到Loop外面刪)
         SQL_Delete = ("DELETE FROM BIDC.dbo.mopsRevenueByCompany WHERE YearMonth = '" + yyyymm + "' AND StockGroup = '" + catg + "'")
         
@@ -141,3 +152,5 @@ df_imcome.to_excel(file_path + "/revenue.xlsx", index = False)
 # 寫資料到MS SQL(Company)
 df_company = df_imcome.iloc[:, [1, 2, 12, 13]]
 df_company = df_company.rename(columns = {"公司代號": "StockID", "公司名稱": "StockName", "上市/上櫃": "Market", "產業": "Industry"}, inplace = False)
+df_company = df_company.drop_duplicates()
+print(df_company)
