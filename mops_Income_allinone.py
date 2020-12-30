@@ -10,13 +10,12 @@ import pyodbc as odbc
 
 # 年月(用今天去抓前一個月)
 premonth = (datetime.date(datetime.date.today().year, datetime.date.today().month, 1) - datetime.timedelta(days = 1))
-## ym要用list包起來
+## ym要用list包起來 
 ym = [str( premonth.year - 1911 ) + "_" + str(premonth.month if premonth.month > 9 else str(premonth.month)[1:])]
 # ym = ["109_1", "109_2", "109_3", "109_4", "109_5", "109_6", "109_7", "109_8", "109_9", "109_10", "109_11"]
 # yyyymm = datetime.date(premonth.year, premonth.month, 1)
 
 # 股票類別(sii = 上市(listed company at stock exchange market), otc = 上櫃(listed company at over-the-counter market), rotc = 興櫃)
-# stockcatg = ["sii", "otc", "rotc"]
 stockcatg = ["sii", "otc", "rotc", "pub"]
 industy = ["半導體", "電子工業"]
 head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
@@ -53,6 +52,9 @@ for catg in stockcatg:
         root =  bs(urlwithhead.text, "lxml")
         with open (web_path + "/imcome_" + catg + ".html", mode = "w", encoding = "UTF-8") as web_html:
             web_html.write(root.prettify())
+# 取市場資訊            
+        market = root.find("b")
+        market = market.text.split("公司")[0]
 # 取table
         for ind in industy:
             try:
@@ -61,6 +63,10 @@ for catg in stockcatg:
                 continue
             with open (web_path + "/tb_" + ind + "_" + catg + ".html", mode = "w", encoding = "UTF-8") as web_html:
                 web_html.write(tb.prettify())
+# 取公司類別
+            cmpindusty = tb.find("tr")
+            cmpindusty = cmpindusty.find("th")
+            cmpindusty = cmpindusty.text.split("：")[1]            
 # Get Head => 空值才要取Head
             if data_head == []:
                 for head_line1 in tb.select("table > tr:nth-child(1) > th:nth-child(4)"):
@@ -69,9 +75,8 @@ for catg in stockcatg:
                         # print(re.sub('<br\s*?>', ' ', head_line2.text))
                         data_head.append(re.sub('<br\s*?>', ' ', head_line2.text))
                     # print(head_line1.text)
-                    data_head.append(head_line1.text)
-                    data_head.append("上市/上櫃")
-                # print(data_head)        
+                    for head_list in [ head_line1.text, "上市/上櫃", "產業" ]:
+                        data_head.append(head_list) 
 # Get Item =>從第3個Row開始loop起(Row 3 以後是資料)
             for rows in tb.select("table > tr")[2:]:
                 StockID = StockName = Remark = []
@@ -87,16 +92,12 @@ for catg in stockcatg:
                 for col5 in rows.select("td:nth-child(5)"):
                     YoYRevenue = col5.text.replace(",", "")
                 for col6 in rows.select("td:nth-child(6)"):
-                    LastPercent = col6.text.replace(",", "").strip()
-                    if LastPercent.isnumeric():
-                        LastPercent
-                    else:
-                        LastPercent = 0       
+                    LastPercent = col6.text.replace(",", "").strip()    
+                    if LastPercent == "":
+                        LastPercent = 0
                 for col7 in rows.select("td:nth-child(7)"):
                     YoYPercent = col7.text.replace(",", "").strip()
-                    if YoYPercent.isnumeric():
-                        YoYPercent
-                    else:
+                    if YoYPercent == "":
                         YoYPercent = 0
                 for col8 in rows.select("td:nth-child(8)"):
                     CurrCount = col8.text.replace(",", "")
@@ -104,14 +105,12 @@ for catg in stockcatg:
                     LastCount = col9.text.replace(",", "")
                 for col10 in rows.select("td:nth-child(10)"):
                     DiffPercent = col10.text.replace(",", "").strip()
-                    if DiffPercent.isnumeric():
-                        DiffPercent
-                    else:
+                    if DiffPercent == "":
                         DiffPercent = 0
                 for col11 in rows.select("td:nth-child(11)"):
                     Remark = col11.string.strip().replace("-", "")
                 if StockID != []: 
-                    collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark, catg]
+                    collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark, market, cmpindusty]
                     data_item.append(collect)
 """ # 先刪資料(不能放到Loop外面刪)
         SQL_Delete = ("DELETE FROM BIDC.dbo.mopsRevenueByCompany WHERE YearMonth = '" + yyyymm + "' AND StockGroup = '" + catg + "'")
@@ -131,10 +130,13 @@ conn_sql.close() """
 
 # 寫資料到File
 df_imcome = pd.DataFrame(data_item, columns = data_head)
+# df_company = pd.DataFrame(data_item[1:2], columns = ["StockID", "StockName"])
+print(type(data_item))
+quit()
 # print(df_imcome)
 # file_name = "{}_{}_{}".format(ind, catg, period)
-for en in ["UTF-8", "BIG5"]:
-    # df_imcome.to_csv(file_path + "/" + file_name + "_" + en.replace("-", "") + ".csv", encoding = en, index = False )
-    df_imcome.to_csv(file_path + "/revenue_" + en.replace("-", "") + ".csv", encoding = en, index = False )
+# for en in ["UTF-8", "BIG5"]:
+#     # df_imcome.to_csv(file_path + "/" + file_name + "_" + en.replace("-", "") + ".csv", encoding = en, index = False )
+#     df_imcome.to_csv(file_path + "/revenue_" + en.replace("-", "") + ".csv", encoding = en, index = False )
 
 df_imcome.to_excel(file_path + "/revenue.xlsx", index = False)
