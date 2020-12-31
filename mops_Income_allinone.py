@@ -1,5 +1,5 @@
+  
 import os
-from os import replace
 import requests as req
 import re
 from bs4 import BeautifulSoup as bs
@@ -12,13 +12,11 @@ import pyodbc as odbc
 premonth = (datetime.date(datetime.date.today().year, datetime.date.today().month, 1) - datetime.timedelta(days = 1))
 ## ym要用list包起來 
 ym = [str( premonth.year - 1911 ) + "_" + str(premonth.month if premonth.month > 9 else str(premonth.month)[1:])]
-# ym = ["109_1", "109_2", "109_3", "109_4", "109_5", "109_6", "109_7", "109_8", "109_9", "109_10", "109_11"]
-ym = ["109_1", "109_2"]
+# ym = ["109_1", "109_2", "109_3", "109_4", "109_5", "109_6", "109_7", "109_8", "109_9", "109_10"]
 # yyyymm = datetime.date(premonth.year, premonth.month, 1)
 
 # 股票類別(sii = 上市(listed company at stock exchange market), otc = 上櫃(listed company at over-the-counter market), rotc = 興櫃)
 stockcatg = ["sii", "otc", "rotc", "pub"]
-stockcatg = ["sii"]
 industy = ["半導體", "電子工業"]
 head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
 
@@ -34,8 +32,8 @@ if os.path.exists(web_path) == False:
     os.makedirs(web_path)
 
 # 連結MS SQL資訊
-# conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "sap@@20166")
-# cursor = conn_sql.cursor()   
+conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "sap@@20166")
+cursor = conn_sql.cursor()   
 
 data_head = []
 data_item = []
@@ -78,7 +76,7 @@ for catg in stockcatg:
                         # print(re.sub('<br\s*?>', ' ', head_line2.text))
                         data_head.append(re.sub('<br\s*?>', ' ', head_line2.text))
                     # print(head_line1.text)
-                    for head_list in [ head_line1.text, "上市/上櫃", "產業" ]:
+                    for head_list in [ head_line1.text, "上市/上櫃" ]:
                         data_head.append(head_list) 
 # Get Item =>從第3個Row開始loop起(Row 3 以後是資料)
             for rows in tb.select("table > tr")[2:]:
@@ -113,16 +111,13 @@ for catg in stockcatg:
                 for col11 in rows.select("td:nth-child(11)"):
                     Remark = col11.string.strip().replace("-", "")
                 if StockID != []: 
-                    collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark, market, cmpindusty]
+                    collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark, market]
                     data_item.append(collect)
                     
-                    # collect = [StockID, StockName, market, cmpindusty]
-                    # if data_company == []:
-                    #     data_company.append(collect)
-                    # else:
-                    #     for i in data_company:    
-                    # data_company.append(collect)          
-""" # 先刪資料(不能放到Loop外面刪)
+                    collect = [StockID, StockName, market, cmpindusty]
+                    if collect not in data_company: 
+                        data_company.append(collect)
+# 先刪資料(不能放到Loop外面刪)
         SQL_Delete = ("DELETE FROM BIDC.dbo.mopsRevenueByCompany WHERE YearMonth = '" + yyyymm + "' AND StockGroup = '" + catg + "'")
         
         cursor.execute(SQL_Delete)
@@ -135,22 +130,29 @@ for list in data_item:
     cursor.execute(SQL_Insert, value)
     conn_sql.commit()
 # print(yyyymm + "(" + catg +")" + "Update Complete!!")
-print("Update Complete!!")
-conn_sql.close() """
+print("Revenue Data Update Complete!!")
+# 寫資料到MS SQL(Company)
+SQL_Delete = ("DELETE FROM BIDC.dbo.mopsStockCompanyInfo WHERE StockID = ?")
+for id in data_company:
+    value = [id[0]]
+    cursor.execute(SQL_Delete, value)
+    conn_sql.commit()
+
+SQL_Insert = ("INSERT INTO BIDC.dbo.mopsStockCompanyInfo (StockID, StockName, Market, Industry) VALUES (?, ?, ?, ?)")
+for list in data_company:
+    value = [ list[0], list[1], list[2], list[3] ]
+    cursor.execute(SQL_Insert, value)
+    conn_sql.commit()
+print("Company Data Update Complete!!")
+conn_sql.close()
 
 # 寫資料到File
 df_imcome = pd.DataFrame(data_item, columns = data_head)
-
 # print(df_imcome)
+## 寫到csv
 # file_name = "{}_{}_{}".format(ind, catg, period)
 # for en in ["UTF-8", "BIG5"]:
 #     # df_imcome.to_csv(file_path + "/" + file_name + "_" + en.replace("-", "") + ".csv", encoding = en, index = False )
 #     df_imcome.to_csv(file_path + "/revenue_" + en.replace("-", "") + ".csv", encoding = en, index = False )
-
+## 寫到Excel
 df_imcome.to_excel(file_path + "/revenue.xlsx", index = False)
-
-# 寫資料到MS SQL(Company)
-df_company = df_imcome.iloc[:, [1, 2, 12, 13]]
-df_company = df_company.rename(columns = {"公司代號": "StockID", "公司名稱": "StockName", "上市/上櫃": "Market", "產業": "Industry"}, inplace = False)
-df_company = df_company.drop_duplicates()
-print(df_company)
