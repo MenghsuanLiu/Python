@@ -32,7 +32,7 @@ if os.path.exists(web_path) == False:
     os.makedirs(web_path)
 
 # 連結MS SQL資訊
-conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "sap@@20166")
+conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "oic#sap21o4")
 cursor = conn_sql.cursor()   
 
 data_head = []
@@ -123,10 +123,10 @@ for catg in stockcatg:
         cursor.execute(SQL_Delete)
         conn_sql.commit()
 # 寫資料到MS SQL(Revenue)
-SQL_Insert = ("INSERT INTO BIDC.dbo.mopsRevenueByCompany (YearMonth, StockGroup, StockID, Revenue, Remark) VALUES (?, ?, ?, ?, ?);")
+SQL_Insert = ("INSERT INTO BIDC.dbo.mopsRevenueByCompany (YearMonth, StockID, Revenue, Remark) VALUES (?, ?, ?, ?);")
 # Insart資料
 for list in data_item:
-    value = [ list[0], list[12], list[1], list[3]*1000, list[11] ]
+    value = [ list[0], list[1], list[3]*1000, list[11] ]
     cursor.execute(SQL_Insert, value)
     conn_sql.commit()
 # print(yyyymm + "(" + catg +")" + "Update Complete!!")
