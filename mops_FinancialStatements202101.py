@@ -1,8 +1,11 @@
 import os
+import re
 import urllib.request as req
 from bs4 import BeautifulSoup as bs
 import pandas as pd
 import numpy as np
+import datetime
+from datequarter import DateQuarter
 import pyodbc as odbc
 
 
@@ -21,9 +24,11 @@ if os.path.exists(web_path) == False:
     os.makedirs(web_path)
 
 StockList = ["2330", "2303"]
-year = "2020"
+# 以今天算出前一個季度
+PreviousQuarter = DateQuarter.from_date(datetime.date.today()) - 1
+year = str(PreviousQuarter._year)
+quarter = str(PreviousQuarter._quarter)
 quarter = "3"
-yqdate = "2020-9-1"
     
 record = 0
 data_head = []
@@ -59,20 +64,24 @@ for CompanyID in StockList:
     with open (web_path + "/tb_ChangeInEquity_" + CompanyID + "_" + year + "Q" + quarter + ".html", mode = "w", encoding = "UTF-8") as web_html:
         web_html.write(tb_ChangeInEquity.prettify())
     
-    # 給固定值
+    # 給固定值-Head(只要取一次就好)
     if record == 0:
         for fixval in ("公司", "日期"):
             data_head.append(fixval)
-
-    for fixval in (CompanyID, yqdate):    
+        # 取出第一個表中的第一個日期,要減二個月才是季初            
+        head_date = tb_BalanceSheet.find_all("th")[3].find("span", class_ = "en").text.split("/")
+        YQ_FirstDate = datetime.date(int(head_date[0]), int(head_date[1]) - 2, 1)
+    # 給固定值-Item
+    for fixval in (CompanyID, str(YQ_FirstDate)):
         item_list.append(fixval)
+
     # 總資產(1XXX) / 總負債(2XXX)
     for GL in ("1XXX", "2XXX"):        
         # 抓第三個column,當季的值
         item_val = tb_BalanceSheet.find("td", text = GL).find_parent("tr").find_all("td")[2].text.strip().replace(",", "").replace("(", "-").replace(")", "")        
         item_list.append(int(item_val) * 1000)
-        if record == 0:
-            # 抓第二個column,中文當成Header
+        # 抓第二個column,中文當成Header(只在第一個loop抓)
+        if record == 0:            
             head_val = tb_BalanceSheet.find("td", text = GL).find_parent("tr").find("span", class_ ="zh").text.strip()
             data_head.append(head_val)
     # 營業收入(4000) / 營業毛利(5950) / 營業費用(6000) / 其他收益(6500) / 營業利益(6900) / 營業外收入及支出(7000) / 母公司業主(8610) / 所得稅費用(7950)
@@ -84,9 +93,8 @@ for CompanyID in StockList:
             item_list.append(float(item_val))
         else:        
             item_list.append(int(item_val) * 1000)
-
-        if record == 0:    
-            # 抓第二個column,中文當成Header
+        # 抓第二個column,中文當成Header(只在第一個loop抓)
+        if record == 0:           
             head_val = tb_ComprehensiveIncome.find("td", text = GL).find_parent("tr").find("span", class_ ="zh").text.strip()
             data_head.append(head_val)
     # 稅前淨利(A10000) / 利息費用(A20900) / 折舊費用(A20100) / 攤銷費用(A20200)
@@ -94,22 +102,26 @@ for CompanyID in StockList:
         # 抓第三個column,當季的值
         item_val = tb_CashFlow.find("td", text = GL).find_parent("tr").find_all("td")[2].text.strip().replace(",", "").replace("(", "-").replace(")", "")        
         item_list.append(int(item_val) * 1000)
+        # 抓第二個column,中文當成Header(只在第一個loop抓)
         if record == 0:
-            # 抓第二個column,中文當成Header
             head_val = tb_CashFlow.find("td", text = GL).find_parent("tr").find("span", class_ ="zh").text.strip()
             data_head.append(head_val)
     # 普通股股本(3110)    
     item_val = tb_ChangeInEquity.find("td", text = "Z1").find_parent("tr").find_all("td")[2].text.strip().replace(",", "").replace("(", "-").replace(")", "")
     item_list.append(int(item_val) * 1000)
+    # Head手動給(只在第一個loop做)
     if record == 0:
         data_head.append("普通股股本")
+
     record += 1
     data_item.append(item_list)
-print(data_head)
-print(data_item)
+
+df_Financial = pd.DataFrame(data_item, columns = data_head)
+df_Financial.to_excel(file_path + "/Financial.xlsx", index=False)
+# print(df_Financial)
 quit()
 
-
+""" 
 
 
 
@@ -204,7 +216,7 @@ for list in data_list:
     cursor.execute(SQL_Insert, value)
     conn_sql.commit()
 conn_sql.close()
-
+ """
 
 
 
