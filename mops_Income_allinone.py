@@ -117,11 +117,11 @@ for catg in stockcatg:
                     collect = [StockID, StockName, market, cmpindusty]
                     if collect not in data_company: 
                         data_company.append(collect)
-# 先刪資料(不能放到Loop外面刪)
-        SQL_Delete = ("DELETE FROM BIDC.dbo.mopsRevenueByCompany WHERE YearMonth = '" + yyyymm + "' AND StockGroup = '" + catg + "'")
-        
-        cursor.execute(SQL_Delete)
-        conn_sql.commit()
+# 先刪資料
+SQL_Delete = ("DELETE FROM BIDC.dbo.mopsRevenueByCompany WHERE YearMonth = '" + yyyymm + "'")
+
+cursor.execute(SQL_Delete)
+conn_sql.commit()
 # 寫資料到MS SQL(Revenue)
 SQL_Insert = ("INSERT INTO BIDC.dbo.mopsRevenueByCompany (YearMonth, StockID, Revenue, Remark) VALUES (?, ?, ?, ?);")
 # Insart資料
