@@ -39,7 +39,7 @@ year = "2019"
 quarter = "4"
 
 # 連結MS SQL資訊
-conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "oic#sap21o4")
+
 cursor = conn_sql.cursor() 
 
 
@@ -86,7 +86,7 @@ def get_headtext(tbobj, GL_Account):
     return text
 
 def get_Q_Rate(Fyear, Fquarter):
-    conn = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "8AEISS01", database = "BIDC", user = "sap_user", password = "sap##1405")
+   
     curs = conn.cursor()
     # 季轉月區間
     max_mon = int(Fquarter) * 3
