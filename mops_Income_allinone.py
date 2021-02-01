@@ -10,17 +10,17 @@ import datetime
 import pyodbc as odbc
 
 # 取BeautifulSoup物件
-def get_BSobj(Industry, YM, genfile):
+def get_BSobj(Category, YM, genfile):
     head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
     url_model = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_{}_0.html"
     # 處理網址
-    url = url_model.format(Industry, YM)
+    url = url_model.format(Category, YM)
     urlwithhead = req.get(url, headers = head_info)
     urlwithhead.encoding = "big5"
     # 寫網頁原始碼到檔案中(有值就要產生File)
     if genfile != "":
         rootlxml = bs(urlwithhead.text, "lxml")
-        with open (web_path + "/imcome_" + catg + ".html", mode = "w", encoding = "UTF-8") as web_html:
+        with open ( "html_file/imcome_" + Category + "_" + YM + ".html", mode = "w", encoding = "UTF-8") as web_html:
             web_html.write(rootlxml.prettify())
     #傳出BeautifulSoup物件
     return bs(urlwithhead.text, "lxml")
@@ -46,12 +46,22 @@ def get_SQLdata(SQLconn, sqlselect):
     df_comp = pd.read_sql(sqlselect, SQLconn)
     return df_comp
 
+def check_CompExist(comp_df, chk_stockid):
+    status = shownname = ""
+    df_list = comp_df.loc[comp_df["StockID"] == chk_stockid[0]]
+    if df_list.empty == True:
+        status =  "append"
+    elif df_list["StockName"].values != chk_stockid[1] or df_list["Market"].values != chk_stockid[2] or df_list["Industry"].values != chk_stockid[3]:
+        # 做modify時要保留showname
+        status =  "modify"
+        shownname = df_list["EnShowName"].values[0]
+    return status, shownname
+
+
 # 年月(用今天去抓前一個月)
 premonth = (datetime.date(datetime.date.today().year, datetime.date.today().month, 1) - datetime.timedelta(days = 1))
 ## ym要用list包起來 
-ym = [str( premonth.year - 1911 ) + "_" + str(premonth.month if premonth.month > 9 else str(premonth.month)[1:])]
-# ym = ["109_1", "109_2", "109_3", "109_4", "109_5", "109_6", "109_7", "109_8", "109_9", "109_10"]
-# yyyymm = datetime.date(premonth.year, premonth.month, 1)
+ym = [str( premonth.year - 1911 ) + "_" + str(premonth.month)]
 
 # 股票類別(sii = 上市(listed company at stock exchange market), otc = 上櫃(listed company at over-the-counter market), rotc = 興櫃)
 stockcatg = ["sii", "otc", "rotc", "pub"]
@@ -67,11 +77,12 @@ if os.path.exists(web_path) == False:
     os.makedirs(web_path)
 
 # 連結MS SQL資訊
-conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "oic#sap21o4")
+# conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "oic#sap21o4")
+conn_sql = odbc.connect(Driver = '{ODBC Driver 17 for SQL Server}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "oic#sap21o4")
 cursor = conn_sql.cursor()   
 
 # 取得資料庫中的客戶清單
-SQL_Select = ("SELECT StockID, StockName, EnShowName FROM BIDC.dbo.mopsStockCompanyInfo")
+SQL_Select = ("SELECT StockID, StockName, Market, Industry, EnShowName FROM BIDC.dbo.mopsStockCompanyInfo")
 df_Complist = get_SQLdata(conn_sql, SQL_Select)
 
 
@@ -84,9 +95,8 @@ for catg in stockcatg:
 # 取得存入資料庫/檔案的資料年月
         yyyymm = period.split("_")
         yyyymm = str(int(yyyymm[0]) + 1911) + "-" + str(yyyymm[1]) + "-1"
-
 # 取得BeautifulSoup Data
-        root = get_BSobj(catg, period, "X") 
+        root = get_BSobj(catg, period, "") 
 
 # 取市場資訊            
         market = root.find("b")
@@ -97,7 +107,7 @@ for catg in stockcatg:
                 tb = root.find("th", text = re.compile(".*" + ind)).find_parent("table")
             except:
                 continue
-            with open (web_path + "/tb_" + ind + "_" + catg + ".html", mode = "w", encoding = "UTF-8") as web_html:
+            with open (web_path + "/tb_" + ind + "_" + catg + "_" + period + ".html", mode = "w", encoding = "UTF-8") as web_html:
                 web_html.write(tb.prettify())
 
 # 取表頭資料
@@ -145,9 +155,15 @@ for catg in stockcatg:
                     
                     collect = [StockID, StockName, market, cmpindusty]
                     if collect not in data_company:
-                        # 判斷公司是否已經存在
-                        if any(df_Complist.StockID == collect[0]) == False or any(df_Complist.StockName == collect[1]) == False:
+                        chk, shown = check_CompExist(df_Complist, collect)
+                        if chk == "append":
+                            collect.append("")
+                            data_company.append(collect)    
+                        if chk == "modify":
+                            collect.append(shown)
                             data_company.append(collect)
+
+
 
 # 先刪資料
 if data_item != []:
@@ -162,7 +178,6 @@ if data_item != []:
         value = [ list[0], list[1], list[3]*1000, list[11] ]
         cursor.execute(SQL_Insert, value)
         conn_sql.commit()
-    # print(yyyymm + "(" + catg +")" + "Update Complete!!")
     print("Revenue Data Update Complete!!")
 
 # 寫資料到MS SQL(Company)
@@ -175,12 +190,11 @@ if data_company !=[]:
 
     SQL_Insert = ("INSERT INTO BIDC.dbo.mopsStockCompanyInfo (StockID, StockName, Market, Industry, EnShowName) VALUES (?, ?, ?, ?, ?)")
     for list in data_company:
-        value = [ list[0], list[1], list[2], list[3], "" ]
+        value = [ list[0], list[1], list[2], list[3], list[4] ]
         cursor.execute(SQL_Insert, value)
         conn_sql.commit()
     print("Company Data Update Complete!!")
     conn_sql.close()
-
 
 # 寫資料到File
 if data_item != [] and data_head !=[]:
