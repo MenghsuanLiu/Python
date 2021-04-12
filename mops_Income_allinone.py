@@ -1,4 +1,3 @@
-  
 import os
 from types import coroutine
 import requests as req
@@ -38,7 +37,7 @@ def get_Header(TBobj):
             # print(re.sub('<br\s*?>', ' ', head_line2.text))
             headtext.append(re.sub('<br\s*?>', ' ', head_line2.text))
         # print(head_line1.text)
-        for head_list in [ head_line1.text, "上市/上櫃" ]:
+        for head_list in [ head_line1.text, "上市/上櫃", "BU" ]:
             headtext.append(head_list)
     return headtext
 
@@ -56,13 +55,46 @@ def check_CompExist(comp_df, chk_stockid):
         status =  "modify"
         shownname = df_list["EnShowName"].values[0]
     return status, shownname
+# 針對PSMC要計算L及M的當月revenue(計算LSPF的,Memory用扣的)
+def split_PSMC_bu(list):
+    if list[1] == "6770":
+        ym = list[0]
+        ym = ym.split("-")[0] + str(ym.split("-")[1] if int(ym.split("-")[1]) >= 10 else "0" + ym.split("-")[1]) +"%"
+
+        conn = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "8AEISS01", database = "BIDC", user = "sap_user", password = "sap##1405")
+        curs = conn.cursor()
+        SQL_sum = """SELECT SUM(revenu) as val
+                        FROM (
+                            SELECT SUM(IIF( FKART NOT IN ('F2', 'L2'), LNETW * -1, LNETW)) as revenu
+                                FROM SAP.dbo.sapRevenue
+                                WHERE FKDAT LIKE '""" + ym + """'
+                            UNION
+                            SELECT SUM(IIF( FKART NOT IN ('F2', 'L2'), LNETW * -1, LNETW)) as revenu
+                                FROM F12SAP.dbo.sapRevenue
+                                WHERE FKDAT LIKE '""" + ym + """'
+                            ) as a"""
+        curs.execute(SQL_sum)
+        revenueval = round([float(r[0]) for r in curs.fetchall()][0] / 1000, 0)
+        curs.close()
+    else:
+        revenueval = 0
+    return revenueval
+# 取得欄位中的值
+def get_tbColval(rowlist, colid):
+    val = ""
+    td_id = "td:nth-child(" + str(colid) + ")"
+    for col in rowlist.select(td_id):
+        if colid in (1, 2, 11):
+            val = col.string.strip().replace("-", "")
+        else:
+            val = col.text.replace(",", "").strip()
+    return val 
 
 
 # 年月(用今天去抓前一個月)
 premonth = (datetime.date(datetime.date.today().year, datetime.date.today().month, 1) - datetime.timedelta(days = 1))
 ## ym要用list包起來 
 ym = [str( premonth.year - 1911 ) + "_" + str(premonth.month)]
-
 # 股票類別(sii = 上市(listed company at stock exchange market), otc = 上櫃(listed company at over-the-counter market), rotc = 興櫃)
 stockcatg = ["sii", "otc", "rotc", "pub"]
 industy = ["半導體", "電子工業"]
@@ -89,14 +121,17 @@ df_Complist = get_SQLdata(conn_sql, SQL_Select)
 data_head = []
 data_item = []
 data_company = []
-
+key_list = []
+ym_list = []
 for catg in stockcatg:
     for period in ym:
 # 取得存入資料庫/檔案的資料年月
         yyyymm = period.split("_")
         yyyymm = str(int(yyyymm[0]) + 1911) + "-" + str(yyyymm[1]) + "-1"
+        if yyyymm not in ym_list:
+             ym_list.append(yyyymm)
 # 取得BeautifulSoup Data
-        root = get_BSobj(catg, period, "") 
+        root = get_BSobj(catg, period, "X") 
 
 # 取市場資訊            
         market = root.find("b")
@@ -119,39 +154,44 @@ for catg in stockcatg:
 
 # Get Item =>從第3個Row開始loop起(Row 3 以後是資料)
             for rows in tb.select("table > tr")[2:]:
-                StockID = StockName = Remark = []
-                CurrRevenue = LastRevenue = YoYRevenue = LastPercent = YoYPercent = CurrCount = LastCount = DiffPercent = 0
-                for col1 in rows.select("td:nth-child(1)"):
-                    StockID = col1.string.strip()
-                for col2 in rows.select("td:nth-child(2)"):
-                    StockName = col2.string.strip()
-                for col3 in rows.select("td:nth-child(3)"):
-                    CurrRevenue = col3.text.replace(",", "")
-                for col4 in rows.select("td:nth-child(4)"):
-                    LastRevenue = col4.text.replace(",", "")
-                for col5 in rows.select("td:nth-child(5)"):
-                    YoYRevenue = col5.text.replace(",", "")
-                for col6 in rows.select("td:nth-child(6)"):
-                    LastPercent = col6.text.replace(",", "").strip()    
-                    if LastPercent == "":
-                        LastPercent = 0
-                for col7 in rows.select("td:nth-child(7)"):
-                    YoYPercent = col7.text.replace(",", "").strip()
-                    if YoYPercent == "":
-                        YoYPercent = 0
-                for col8 in rows.select("td:nth-child(8)"):
-                    CurrCount = col8.text.replace(",", "")
-                for col9 in rows.select("td:nth-child(9)"):
-                    LastCount = col9.text.replace(",", "")
-                for col10 in rows.select("td:nth-child(10)"):
-                    DiffPercent = col10.text.replace(",", "").strip()
-                    if DiffPercent == "":
-                        DiffPercent = 0
-                for col11 in rows.select("td:nth-child(11)"):
-                    Remark = col11.string.strip().replace("-", "")
-                if StockID != []: 
-                    collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark, market]
-                    data_item.append(collect)
+                StockID = get_tbColval(rows, 1)
+                StockName = get_tbColval(rows, 2)
+                CurrRevenue = get_tbColval(rows, 3)
+                LastRevenue = get_tbColval(rows, 4)
+                YoYRevenue = get_tbColval(rows, 5)
+                LastPercent = get_tbColval(rows, 6)
+                if LastPercent == "":
+                    LastPercent = 0
+                YoYPercent = get_tbColval(rows, 7)
+                if YoYPercent == "":
+                    YoYPercent = 0
+                CurrCount = get_tbColval(rows, 8)
+                LastCount = get_tbColval(rows, 9)
+                DiffPercent = get_tbColval(rows, 10)
+                if DiffPercent == "":
+                    DiffPercent = 0
+                Remark = get_tbColval(rows, 11)
+
+                if StockID != "":
+                    key = [yyyymm, StockID]
+                    if key not in key_list:
+                        collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark, market]
+                        # 遇到PSMC要拆BU
+                        psmc_lspf_val = split_PSMC_bu(collect)
+                        if psmc_lspf_val == 0:
+                            collect.append("")
+                        else:
+                            collect_tmp = collect.copy()
+                            psmc_m_val = collect[3] - psmc_lspf_val
+                            collect_tmp[3] = psmc_lspf_val
+                            collect_tmp.append("L")
+                            data_item.append(collect_tmp)
+                            collect[3]  = psmc_m_val
+                            collect.append("M")
+                        data_item.append(collect)
+                        key_list.append(key)
+
+                    
                     
                     collect = [StockID, StockName, market, cmpindusty]
                     if collect not in data_company:
@@ -165,17 +205,20 @@ for catg in stockcatg:
 
 
 
-# 先刪資料
-if data_item != []:
-    SQL_Delete = ("DELETE FROM BIDC.dbo.mopsRevenueByCompany WHERE YearMonth = '" + yyyymm + "'")
 
-    cursor.execute(SQL_Delete)
-    conn_sql.commit()
+if data_item != []:
+    # 先刪資料
+    for ym in ym_list:
+        SQL_Delete = ("DELETE FROM BIDC.dbo.mopsRevenueByCompany WHERE YearMonth = '" + ym + "'")
+        cursor.execute(SQL_Delete)
+        conn_sql.commit()
+        print(ym, "Data Deleted!!")
+
     # 寫資料到MS SQL(Revenue)
-    SQL_Insert = ("INSERT INTO BIDC.dbo.mopsRevenueByCompany (YearMonth, StockID, Revenue, Remark) VALUES (?, ?, ?, ?);")
+    SQL_Insert = ("INSERT INTO BIDC.dbo.mopsRevenueByCompany (YearMonth, StockID, Revenue, Remark, BU) VALUES (?, ?, ?, ?, ?);")
     # Insart資料
     for list in data_item:
-        value = [ list[0], list[1], list[3]*1000, list[11] ]
+        value = [ list[0], list[1], list[3]*1000, list[11], list[13] ]
         cursor.execute(SQL_Insert, value)
         conn_sql.commit()
     print("Revenue Data Update Complete!!")
@@ -187,14 +230,15 @@ if data_company !=[]:
         value = [id[0]]
         cursor.execute(SQL_Delete, value)
         conn_sql.commit()
+        print("Company ID", id[0], "Deleted!")
 
     SQL_Insert = ("INSERT INTO BIDC.dbo.mopsStockCompanyInfo (StockID, StockName, Market, Industry, EnShowName) VALUES (?, ?, ?, ?, ?)")
     for list in data_company:
         value = [ list[0], list[1], list[2], list[3], list[4] ]
         cursor.execute(SQL_Insert, value)
         conn_sql.commit()
-    print("Company Data Update Complete!!")
-    conn_sql.close()
+        print("Company ID Data", list[0], "Updated!!")
+conn_sql.close()
 
 # 寫資料到File
 if data_item != [] and data_head !=[]:
