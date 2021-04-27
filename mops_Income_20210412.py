@@ -1,4 +1,4 @@
-
+# %%
 import os
 from types import coroutine
 import requests as req
@@ -10,8 +10,8 @@ import datetime
 import pyodbc as odbc
 import json
 
-from Logger import create_logger
-
+# from Logger import create_logger
+# %%
 # 取BeautifulSoup物件
 def get_BSobj(Category, YM, genfile):
     head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
@@ -286,5 +286,6 @@ conn_sql.close()
 
 write_excel(data_head, data_item, "revenue")
 logger.info("Export Done! \n")
+quit()
 
 
