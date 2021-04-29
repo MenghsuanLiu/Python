@@ -1,32 +1,35 @@
 # %%
 import os
 from types import coroutine
+# from pandas.core.frame import DataFrame
 import requests as req
 import re
 from bs4 import BeautifulSoup as bs
 import pandas as pd
 import numpy as np
 import datetime
+from dateutil.relativedelta import relativedelta
 import pyodbc as odbc
+import pymssql
 import json
 
-# from Logger import create_logger
-# %%
+from util.Logger import create_logger
+
 # 取BeautifulSoup物件
-def get_BSobj(Category, YM, genfile):
+def getBSobj_genFile(Category, YM, genfile, wpath):
     head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
     url_model = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_{}_0.html"
     # 處理網址
     url = url_model.format(Category, YM)
     urlwithhead = req.get(url, headers = head_info)
     urlwithhead.encoding = "big5"
-    # 產生出的檔案存下來
-    ## 建立目錄,不存在才建...
-    web_path = "html_file"
-    if os.path.exists(web_path) == False:
-        os.makedirs(web_path)
+    
     ## 寫網頁原始碼到檔案中(有值就要產生File)
     if genfile != "":
+        # 產生出的檔案存下來
+        ## 建立目錄,不存在才建...    
+        if os.path.exists(wpath) == False:
+            os.makedirs(wpath)
         rootlxml = bs(urlwithhead.text, "lxml")
         with open ( web_path + "/imcome_" + Category + "_" + YM + ".html", mode = "w", encoding = "UTF-8") as web_html:
             web_html.write(rootlxml.prettify())
@@ -70,6 +73,12 @@ def split_PSMC_bu(list):
         ym = list[0]
         ym = ym.split("-")[0] + str(ym.split("-")[1] if int(ym.split("-")[1]) >= 10 else "0" + ym.split("-")[1]) +"%"
 
+        with pymssql.connect( server = "8AEISS01", user = "sap_user", password = "sap##1405", database = "BIDC" ) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT StockID, StockName, Market, Industry, EnShowName FROM BIDC.dbo.mopsStockCompanyInfo")
+            
+
+
         conn = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "8AEISS01", database = "BIDC", user = "sap_user", password = "sap##1405")
         curs = conn.cursor()
         SQL_sum = """SELECT SUM(revenu) as val
@@ -99,16 +108,16 @@ def get_tbColval(rowlist, colid):
             val = col.text.replace(",", "").strip()
     return val 
 
-def get_config_data(file_path, datatype):
+def getConfigData(file_path, datatype):
     with open(file_path, encoding = "UTF-8") as f:
         jfile = json.load(f)
     list_val = jfile[datatype]
     return list_val
 
-def write_excel(DataH, DataI, fname):    
+def writeExcel(DataH, DataI, fname):    
     if DataH != [] and DataI !=[]:
         # 存成檔案時的目錄
-        file_path = "download_file"
+        file_path = "./data/download_file"
     # 建立目錄,不存在才建...
         if os.path.exists(file_path) == False:
             os.makedirs(file_path)
@@ -132,33 +141,45 @@ def write_excel(DataH, DataI, fname):
         #     # df_imcome.to_csv(file_path + "/" + file_name + "_" + en.replace("-", "") + ".csv", encoding = en, index = False )
         #     df_imcome.to_csv(file_path + "/revenue_" + en.replace("-", "") + ".csv", encoding = en, index = False )
         
+def getComplist_mssql():
+    cols = ["StockID", "StockName", "Market", "Industry", "EnShowName"]
+    with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = "oic#sap21o4", database = "BIDC" ) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT StockID, StockName, Market, Industry, EnShowName FROM BIDC.dbo.mopsStockCompanyInfo")
+            quary = cursor.fetchall()
+            df_list = pd.DataFrame(quary, columns = cols)
+    return df_list
+
+def getMonthFromToday(num):
+    num = num * -1
+    # 年月日(用今天去抓想要的月)
+    newdate = datetime.date.today() - relativedelta(months = num)
+    # 用list包起來取得民國年月
+    ym = [str( newdate.year - 1911 ) + "_" + str( newdate.month )]
+    return ym
+
+
 
 # %%
-# 年月(用今天去抓前一個月)
-premonth = (datetime.date(datetime.date.today().year, datetime.date.today().month, 1) - datetime.timedelta(days = 1))
-## ym要用list包起來 
-ym = [str( premonth.year - 1911 ) + "_" + str(premonth.month)]
-# 股票類別(sii = 上市(listed company at stock exchange market), otc = 上櫃(listed company at over-the-counter market), rotc = 興櫃)
-
-# %%
-# stockcatg = ["sii", "otc", "rotc", "pub"]
-# industy = ["半導體", "電子工業"]
-filename = ("webcrawler/config_file/config.json")
-stockcatg = get_config_data(filename, "stocktype")
-industy = get_config_data(filename, "industygroup")
+cfg_fname = "./config/config.json"
+web_path = "./data/html_file"
 dict_catg = {"sii": "上市公司", "otc": "上櫃公司", "rotc": "興櫃公司", "pub": "公開發行公司"}
+# 取得需要抓取的年月清單
+try:
+    ym = getConfigData(cfg_fname, "yearmon")
+except:
+    ym = getMonthFromToday(-1)  #-1 往前一個月
+# 取得市場類別的清單
+stockcatg = getConfigData(cfg_fname, "stocktype") # stockcatg = ["sii", "otc", "rotc", "pub"]
+# 取得產業別的清單
+industy = getConfigData(cfg_fname, "industygroup") # industy = ["半導體", "電子工業"]
+# 取得公司的清單(先前已存在資料庫中)
+df_Complist = getComplist_mssql()
 
-# 連結MS SQL資訊
-# conn_sql = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "oic#sap21o4")
-conn_sql = odbc.connect(Driver = '{ODBC Driver 17 for SQL Server}', Server = "RAOICD01", database = "BIDC", user = "owner_sap", password = "oic#sap21o4")
-cursor = conn_sql.cursor()
-
-# 取得資料庫中的客戶清單
-SQL_Select = ("SELECT StockID, StockName, Market, Industry, EnShowName FROM BIDC.dbo.mopsStockCompanyInfo")
-df_Complist = get_SQLdata(conn_sql, SQL_Select)
 
 
-logger = create_logger("webcrawler/logs")
+# %%
+logger = create_logger("./log")
 logger.info("Start \n")
 
 data_head = []
@@ -168,28 +189,30 @@ key_list = []
 ym_list = []
 for catg in stockcatg:
     for period in ym:
-# 取得存入資料庫/檔案的資料年月
+        # 取得存入資料庫/檔案的資料年月
         yyyymm = period.split("_")
         yyyymm = str(int(yyyymm[0]) + 1911) + "-" + str(yyyymm[1]) + "-1"
         if yyyymm not in ym_list:
              ym_list.append(yyyymm)
-# 取得BeautifulSoup Data
-        root = get_BSobj(catg, period, "X") 
 
-# 取市場資訊            
+        # 取得BeautifulSoup Data
+        root = getBSobj_genFile(catg, period, "X", web_path) 
+
+        # 取市場資訊            
         market = root.find("b")
         market = market.text.split("公司")[0]
-# 取table
+
+        # 取table
         for ind in industy:
             logger.info(period + dict_catg[catg] + ind + "Start \n")
             try:
                 tb = root.find("th", text = re.compile(".*" + ind)).find_parent("table")
             except:
                 continue
+            # 把取出的Table html資料存成File
             with open (web_path + "/tb_" + ind + "_" + catg + "_" + period + ".html", mode = "w", encoding = "UTF-8") as web_html:
                 web_html.write(tb.prettify())
-
-# 取表頭資料
+            # 取表頭資料
             if data_head == []:
                 data_head = get_Header(tb)
 
@@ -282,10 +305,9 @@ if data_company !=[]:
         cursor.execute(SQL_Insert, value)
         conn_sql.commit()
         print("Company ID Data", list[0], "Updated!!") """
-conn_sql.close()
+# conn_sql.close()
 
-write_excel(data_head, data_item, "revenue")
+writeExcel(data_head, data_item, "revenue")
 logger.info("Export Done! \n")
-quit()
 
 
