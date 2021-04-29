@@ -1,4 +1,5 @@
 {
+// "yearmon":["110_1", "110_2"],
 "stocktype":["sii",	"otc", "rotc",	"pub"],
 "industygroup":["半導體", "電子工業"]
 }
