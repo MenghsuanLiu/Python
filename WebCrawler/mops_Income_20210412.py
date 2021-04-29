@@ -1,18 +1,13 @@
 # %%
 import os
-from types import coroutine
-# from pandas.core.frame import DataFrame
-import requests as req
 import re
-from bs4 import BeautifulSoup as bs
+import requests as req
 import pandas as pd
-import numpy as np
 import datetime
-from dateutil.relativedelta import relativedelta
-import pyodbc as odbc
 import pymssql
 import json
-
+from dateutil.relativedelta import relativedelta
+from bs4 import BeautifulSoup as bs
 from util.Logger import create_logger
 
 # 取BeautifulSoup物件
@@ -68,32 +63,24 @@ def check_CompExist(comp_df, chk_stockid):
         shownname = df_list["EnShowName"].values[0]
     return status, shownname
 # 針對PSMC要計算L及M的當月revenue(計算LSPF的,Memory用扣的)
-def split_PSMC_bu(list):
+def splitPSMCRevenueByBU(list):
     if list[1] == "6770":
         ym = list[0]
         ym = ym.split("-")[0] + str(ym.split("-")[1] if int(ym.split("-")[1]) >= 10 else "0" + ym.split("-")[1]) +"%"
 
         with pymssql.connect( server = "8AEISS01", user = "sap_user", password = "sap##1405", database = "BIDC" ) as conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT StockID, StockName, Market, Industry, EnShowName FROM BIDC.dbo.mopsStockCompanyInfo")
-            
-
-
-        conn = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server = "8AEISS01", database = "BIDC", user = "sap_user", password = "sap##1405")
-        curs = conn.cursor()
-        SQL_sum = """SELECT SUM(revenu) as val
-                        FROM (
-                            SELECT SUM(IIF( FKART NOT IN ('F2', 'L2'), LNETW * -1, LNETW)) as revenu
-                                FROM SAP.dbo.sapRevenue
-                                WHERE FKDAT LIKE '""" + ym + """'
-                            UNION
-                            SELECT SUM(IIF( FKART NOT IN ('F2', 'L2'), LNETW * -1, LNETW)) as revenu
-                                FROM F12SAP.dbo.sapRevenue
-                                WHERE FKDAT LIKE '""" + ym + """'
-                            ) as a"""
-        curs.execute(SQL_sum)
-        revenueval = round([float(r[0]) for r in curs.fetchall()][0] / 1000, 0)
-        curs.close()
+                cursor.execute("""SELECT SUM(revenu) as val 
+                                    FROM ( 
+                                        SELECT SUM(IIF( FKART NOT IN ({type1}, {type2}), LNETW * -1, LNETW)) as revenu
+                                            FROM SAP.dbo.sapRevenue
+                                            WHERE FKDAT LIKE {date1}
+                                        UNION
+                                        SELECT SUM(IIF( FKART NOT IN ({type1}, {type2}), LNETW * -1, LNETW)) as revenu
+                                            FROM F12SAP.dbo.sapRevenue
+                                            WHERE FKDAT LIKE {date1}
+                                        ) as a""".format(type1 = "F2", type2 = "L2", date1 = ym) )
+                revenueval = round([float(r[0]) for r in cursor.fetchall()][0] / 1000, 0)
     else:
         revenueval = 0
     return revenueval
@@ -157,8 +144,6 @@ def getMonthFromToday(num):
     # 用list包起來取得民國年月
     ym = [str( newdate.year - 1911 ) + "_" + str( newdate.month )]
     return ym
-
-
 
 # %%
 cfg_fname = "./config/config.json"
@@ -244,7 +229,7 @@ for catg in stockcatg:
                     if key not in key_list:
                         collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark, market]
                         # 遇到PSMC要拆BU
-                        psmc_lspf_val = split_PSMC_bu(collect)
+                        psmc_lspf_val = splitPSMCRevenueByBU(collect)
                         if psmc_lspf_val == 0:
                             collect.append("")
                         else:
