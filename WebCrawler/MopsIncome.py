@@ -6,6 +6,7 @@ import pandas as pd
 import datetime
 import pymssql
 import json
+# import lxml
 from dateutil.relativedelta import relativedelta
 from bs4 import BeautifulSoup as bs
 from util.Logger import create_logger
@@ -101,26 +102,30 @@ def getConfigData(file_path, datatype):
     list_val = jfile[datatype]
     return list_val
 
-def writeExcel(DataH, DataI, fname):    
-    if DataH != [] and DataI !=[]:
-        # 存成檔案時的目錄
-        file_path = "./data/download_file"
-    # 建立目錄,不存在才建...
-        if os.path.exists(file_path) == False:
-            os.makedirs(file_path)
+def writeExcel(DataH, DataI, fname, genxls):
+    if genxls != "":
+        if DataH != [] and DataI !=[]:
+            # 存成檔案時的目錄
+            file_path = "./data/download_file"
+        # 建立目錄,不存在才建...
+            if os.path.exists(file_path) == False:
+                os.makedirs(file_path)
 
-        df_imcome = pd.DataFrame(DataI, columns = DataH)
-        ## 寫到Excel
-        try:
-            df_imcome.to_excel(file_path + "/" + fname + ".xlsx", index = False)
-            logger.info("Create " + file_path + "/" + fname + ".xlsx Success!! \n")
-            return print("Create " + fname + ".xlsx Success!!")
-        except:
-            logger.info("Create " + file_path + "/" + fname + ".xlsx Fail!! \n")
-            return print("Create " + fname + ".xlsx Fail!!")
+            df_imcome = pd.DataFrame(DataI, columns = DataH)
+            ## 寫到Excel
+            try:
+                df_imcome.to_excel(file_path + "/" + fname + ".xlsx", index = False)
+                logger.info("Create " + file_path + "/" + fname + ".xlsx Success!! \n")
+                return print("Create " + fname + ".xlsx Success!!")
+            except:
+                logger.info("Create " + file_path + "/" + fname + ".xlsx Fail!! \n")
+                return print("Create " + fname + ".xlsx Fail!!")
+        else:
+            logger.info("No Data to Create Excel File! \n")
+            return print("Did not Collect Data!!")
     else:
-        logger.info("No Data to Create Excel File! \n")
-        return print("Did not Collect Data!!")
+        logger.info("不需要產生Excel的檔案! \n")
+
         # print(df_imcome)
         ## 寫到csv
         # file_name = "{}_{}_{}".format(ind, catg, period)
@@ -159,7 +164,9 @@ stockcatg = getConfigData(cfg_fname, "stocktype") # stockcatg = ["sii", "otc", "
 # 取得產業別的清單
 industy = getConfigData(cfg_fname, "industygroup") # industy = ["半導體", "電子工業"]
 # 取得公司的清單(先前已存在資料庫中)
-df_Complist = getComplist_mssql()
+# df_Complist = getComplist_mssql()
+# 判斷是否需要產生Excel File
+up_xlsx = getConfigData(cfg_fname, "update_xls")
 
 
 
@@ -224,36 +231,39 @@ for catg in stockcatg:
                     DiffPercent = 0
                 Remark = get_tbColval(rows, 11)
 
-                if StockID != "":
-                    key = [yyyymm, StockID]
-                    if key not in key_list:
-                        collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark, market]
-                        # 遇到PSMC要拆BU
-                        psmc_lspf_val = splitPSMCRevenueByBU(collect)
-                        if psmc_lspf_val == 0:
-                            collect.append("")
-                        else:
-                            collect_tmp = collect.copy()
-                            psmc_m_val = collect[3] - psmc_lspf_val
-                            collect_tmp[3] = psmc_lspf_val
-                            collect_tmp.append("L")
-                            data_item.append(collect_tmp)
-                            collect[3]  = psmc_m_val
-                            collect.append("M")
-                        data_item.append(collect)
-                        key_list.append(key)
+
+                collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark, market]
+                data_item.append(collect)
+                # if StockID != "":
+                #     key = [yyyymm, StockID]
+                #     if key not in key_list:
+                #         collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark, market]
+                #         # 遇到PSMC要拆BU
+                #         psmc_lspf_val = splitPSMCRevenueByBU(collect)
+                #         if psmc_lspf_val == 0:
+                #             collect.append("")
+                #         else:
+                #             collect_tmp = collect.copy()
+                #             psmc_m_val = collect[3] - psmc_lspf_val
+                #             collect_tmp[3] = psmc_lspf_val
+                #             collect_tmp.append("L")
+                #             data_item.append(collect_tmp)
+                #             collect[3]  = psmc_m_val
+                #             collect.append("M")
+                #         data_item.append(collect)
+                #         key_list.append(key)
 
                     
                     
-                    collect = [StockID, StockName, market, cmpindusty]
-                    if collect not in data_company:
-                        chk, shown = check_CompExist(df_Complist, collect)
-                        if chk == "append":
-                            collect.append("")
-                            data_company.append(collect)    
-                        if chk == "modify":
-                            collect.append(shown)
-                            data_company.append(collect)
+                #     collect = [StockID, StockName, market, cmpindusty]
+                #     if collect not in data_company:
+                #         chk, shown = check_CompExist(df_Complist, collect)
+                #         if chk == "append":
+                #             collect.append("")
+                #             data_company.append(collect)    
+                #         if chk == "modify":
+                #             collect.append(shown)
+                #             data_company.append(collect)
 
 
 
@@ -291,8 +301,7 @@ if data_company !=[]:
         conn_sql.commit()
         print("Company ID Data", list[0], "Updated!!") """
 # conn_sql.close()
-
-writeExcel(data_head, data_item, "revenue")
+# %%
+# 產生Excel File
+writeExcel(data_head, data_item, "revenue", up_xlsx)
 logger.info("Export Done! \n")
-
-
