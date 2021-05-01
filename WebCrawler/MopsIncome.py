@@ -6,7 +6,6 @@ import pandas as pd
 import datetime
 import pymssql
 import json
-# import lxml
 from dateutil.relativedelta import relativedelta
 from bs4 import BeautifulSoup as bs
 from util.Logger import create_logger
@@ -55,13 +54,16 @@ def get_SQLdata(SQLconn, sqlselect):
 
 def check_CompExist(comp_df, chk_stockid):
     status = shownname = ""
-    df_list = comp_df.loc[comp_df["StockID"] == chk_stockid[0]]
-    if df_list.empty == True:
-        status =  "append"
-    elif df_list["StockName"].values != chk_stockid[1] or df_list["Market"].values != chk_stockid[2] or df_list["Industry"].values != chk_stockid[3]:
-        # 做modify時要保留showname
-        status =  "modify"
-        shownname = df_list["EnShowName"].values[0]
+    if comp_df != None:        
+        df_list = comp_df.loc[comp_df["StockID"] == chk_stockid[0]]
+        if df_list.empty == True:
+            status =  "append"
+        elif df_list["StockName"].values != chk_stockid[1] or df_list["Market"].values != chk_stockid[2] or df_list["Industry"].values != chk_stockid[3]:
+            # 做modify時要保留showname
+            status =  "modify"
+            shownname = df_list["EnShowName"].values[0]
+    else:
+      status =  "append"  
     return status, shownname
 # 針對PSMC要計算L及M的當月revenue(計算LSPF的,Memory用扣的)
 def splitPSMCRevenueByBU(list, updb):
@@ -151,7 +153,7 @@ def getMonthFromToday(num):
     ym = [str( newdate.year - 1911 ) + "_" + str( newdate.month )]
     return ym
 
-# %%
+
 cfg_fname = "./config/config.json"
 web_path = "./data/html_file"
 dict_catg = {"sii": "上市公司", "otc": "上櫃公司", "rotc": "興櫃公司", "pub": "公開發行公司"}
@@ -173,7 +175,6 @@ up_xlsx = getConfigData(cfg_fname, "update_xls")
 up_db = getConfigData(cfg_fname, "update_db")
 # 取得公司的清單(先前已存在資料庫中)
 df_Complist = getComplist_mssql(up_db)
-quit()
 
 
 # %%
@@ -255,7 +256,6 @@ for catg in stockcatg:
                             collect.append("M")
                         data_item.append(collect)
                         key_list.append(key)
-
                     
                     # 收集公司清單的資料
                     collect = [StockID, StockName, market, cmpindusty]
@@ -267,11 +267,6 @@ for catg in stockcatg:
                         if chk == "modify":
                             collect.append(shown)
                             data_company.append(collect)
-                    print(collect)
-                    quit()
-
-
-
 
 """ if data_item != []:
     # 先刪資料
