@@ -1,6 +1,7 @@
 {
-"stocktype":["sii",	"otc", "rotc",	"pub"],
-"industygroup":["半導體", "電子工業"],
-"update_xls": "X",
-"update_db": ""
+    "yearmon":["110_3"],
+    "stocktype":["sii",	"otc", "rotc",	"pub"],
+    "industygroup":["半導體", "電子工業"],
+    "update_xls": "X",
+    "update_db": ""
 }
