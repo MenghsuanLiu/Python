@@ -9,7 +9,8 @@ import json
 from dateutil.relativedelta import relativedelta
 from bs4 import BeautifulSoup as bs
 from util.Logger import create_logger
-
+from util.EncryptionDecrypt import dectry
+# %%
 # 取BeautifulSoup物件
 def getBSobj_genFile(Category, YM, genfile, wpath):
     head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
@@ -68,11 +69,13 @@ def check_CompExist(comp_df, chk_stockid):
 # 針對PSMC要計算L及M的當月revenue(計算LSPF的,Memory用扣的)
 def splitPSMCRevenueByBU(list, updb):
     revenueval = 0
+    pwd_enc = "215_203_225_72_88_148_169_83_98_"
+    pwd = dectry(pwd_enc)
     if updb != "" and list[1] == "6770":
         ym = list[0]
         ym = ym.split("-")[0] + str(ym.split("-")[1] if int(ym.split("-")[1]) >= 10 else "0" + ym.split("-")[1]) +"%"
 
-        with pymssql.connect( server = "8AEISS01", user = "sap_user", password = "sap##1405", database = "BIDC" ) as conn:
+        with pymssql.connect( server = "8AEISS01", user = "sap_user", password = pwd, database = "BIDC" ) as conn:
             with conn.cursor() as cursor:
                 cursor.execute("""SELECT SUM(revenu) as val 
                                     FROM ( 
@@ -135,10 +138,11 @@ def writeExcel(DataH, DataI, fname, genxls):
         #     df_imcome.to_csv(file_path + "/revenue_" + en.replace("-", "") + ".csv", encoding = en, index = False )
         
 def getComplist_mssql(db):
-
+    pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
+    pwd = dectry(pwd_enc)
     if db != "":
         cols = ["StockID", "StockName", "Market", "Industry", "EnShowName"]
-        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = "oic#sap21o4", database = "BIDC" ) as conn:
+        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = pwd, database = "BIDC" ) as conn:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT StockID, StockName, Market, Industry, EnShowName FROM BIDC.dbo.mopsStockCompanyInfo")
                 quary = cursor.fetchall()
