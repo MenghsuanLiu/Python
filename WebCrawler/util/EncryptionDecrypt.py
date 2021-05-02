@@ -19,9 +19,3 @@ def dectry(p):
     return dec_str
 
 
-# data = "sap##1405"
-# print("原始資料為：",data)
-# enc_str = enctry(data)
-# print("加密資料為：",enc_str)
-# dec_str = dectry(enc_str)
-# print("解密資料為：",dec_str)
