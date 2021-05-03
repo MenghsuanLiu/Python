@@ -3,6 +3,7 @@ import os
 import re
 import requests as req
 import pandas as pd
+import numpy as np
 import datetime
 import pymssql
 import json
@@ -10,7 +11,7 @@ from dateutil.relativedelta import relativedelta
 from bs4 import BeautifulSoup as bs
 from util.Logger import create_logger
 from util.EncryptionDecrypt import dectry
-# %%
+
 # 取BeautifulSoup物件
 def getBSobj_genFile(Category, YM, genfile, wpath):
     head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
@@ -53,9 +54,9 @@ def get_SQLdata(SQLconn, sqlselect):
     df_comp = pd.read_sql(sqlselect, SQLconn)
     return df_comp
 
-def check_CompExist(comp_df, chk_stockid):
+def check_CompExist(comp_df, chk_stockid, updb):
     status = shownname = ""
-    if comp_df != None:        
+    if updb != "":
         df_list = comp_df.loc[comp_df["StockID"] == chk_stockid[0]]
         if df_list.empty == True:
             status =  "append"
@@ -64,7 +65,7 @@ def check_CompExist(comp_df, chk_stockid):
             status =  "modify"
             shownname = df_list["EnShowName"].values[0]
     else:
-      status =  "append"  
+        status =  "append"    
     return status, shownname
 # 針對PSMC要計算L及M的當月revenue(計算LSPF的,Memory用扣的)
 def splitPSMCRevenueByBU(list, updb):
@@ -79,13 +80,13 @@ def splitPSMCRevenueByBU(list, updb):
             with conn.cursor() as cursor:
                 cursor.execute("""SELECT SUM(revenu) as val 
                                     FROM ( 
-                                        SELECT SUM(IIF( FKART NOT IN ({type1}, {type2}), LNETW * -1, LNETW)) as revenu
+                                        SELECT SUM(IIF( FKART NOT IN ('{type1}', '{type2}'), LNETW * -1, LNETW)) as revenu
                                             FROM SAP.dbo.sapRevenue
-                                            WHERE FKDAT LIKE {date1}
+                                            WHERE FKDAT LIKE '{date1}'
                                         UNION
-                                        SELECT SUM(IIF( FKART NOT IN ({type1}, {type2}), LNETW * -1, LNETW)) as revenu
+                                        SELECT SUM(IIF( FKART NOT IN ('{type1}', '{type2}'), LNETW * -1, LNETW)) as revenu
                                             FROM F12SAP.dbo.sapRevenue
-                                            WHERE FKDAT LIKE {date1}
+                                            WHERE FKDAT LIKE '{date1}'
                                         ) as a""".format(type1 = "F2", type2 = "L2", date1 = ym) )
                 revenueval = round([float(r[0]) for r in cursor.fetchall()][0] / 1000, 0)
     return revenueval
@@ -111,24 +112,27 @@ def writeExcel(DataH, DataI, fname, genxls):
         if DataH != [] and DataI !=[]:
             # 存成檔案時的目錄
             file_path = "./data/download_file"
-        # 建立目錄,不存在才建...
+            # 建立目錄,不存在才建...
             if os.path.exists(file_path) == False:
                 os.makedirs(file_path)
-
+            # 最後一個欄位是為了寫資料庫加的
+            for x in DataI:
+                del x[-1]
+            # 轉換成DataFrame    
             df_imcome = pd.DataFrame(DataI, columns = DataH)
             ## 寫到Excel
             try:
                 df_imcome.to_excel(file_path + "/" + fname + ".xlsx", index = False)
-                logger.info("Create " + file_path + "/" + fname + ".xlsx Success!! \n")
+                logger.info("Create " + file_path + "/" + fname + ".xlsx Success!!")
                 return print("Create " + fname + ".xlsx Success!!")
             except:
-                logger.info("Create " + file_path + "/" + fname + ".xlsx Fail!! \n")
+                logger.info("Create " + file_path + "/" + fname + ".xlsx Fail!!")
                 return print("Create " + fname + ".xlsx Fail!!")
         else:
-            logger.info("No Data to Create Excel File! \n")
+            logger.info("No Data to Create Excel File!")
             return print("Did not Collect Data!!")
     else:
-        logger.info("不需要產生Excel的檔案! \n")
+        logger.info("不需要產生Excel的檔案!")
 
         # print(df_imcome)
         ## 寫到csv
@@ -138,16 +142,90 @@ def writeExcel(DataH, DataI, fname, genxls):
         #     df_imcome.to_csv(file_path + "/revenue_" + en.replace("-", "") + ".csv", encoding = en, index = False )
         
 def getComplist_mssql(db):
+    df_list = []
     pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
     pwd = dectry(pwd_enc)
     if db != "":
-        cols = ["StockID", "StockName", "Market", "Industry", "EnShowName"]
+        head = ["StockID", "StockName", "Market", "Industry", "EnShowName"]
         with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = pwd, database = "BIDC" ) as conn:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT StockID, StockName, Market, Industry, EnShowName FROM BIDC.dbo.mopsStockCompanyInfo")
                 quary = cursor.fetchall()
-                df_list = pd.DataFrame(quary, columns = cols)
-        return df_list
+                df_list = pd.DataFrame(quary, columns = head)
+    return df_list
+
+def updateRevenue_mssql(db, DataI, ymlist):
+    pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
+    pwd = dectry(pwd_enc)
+    if db != "" and DataI != []:
+        # 資料先做轉換
+        ym_tuple = [x for x in zip(*[iter(ymlist)])]
+
+        ary_data = np.array(DataI)
+        item_tuple = list(map(tuple, ary_data[:,[0, 13, 1, 14, 11]]))
+        # 連結資料庫
+        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = pwd, database = "BIDC" ) as conn:
+            with conn.cursor() as cursor:
+                # 先刪資料
+                try:      
+                    cursor.executemany("DELETE FROM BIDC.dbo.mopsRevenueByCompany_tmp WHERE YearMonth = %s", ym_tuple)
+                    conn.commit()
+                    logger.info("mopsRevenueByCompany Delete Complete")
+                except:
+                    logger.info("mopsRevenueByCompany Delete Error")
+                    return
+                # 寫入資料
+                try:
+                    cursor.executemany("INSERT INTO BIDC.dbo.mopsRevenueByCompany_tmp (YearMonth, BU, StockID, Revenue, Remark) VALUES (%s, %s, %s, %d, %s)", item_tuple) 
+                    conn.commit()
+                    logger.info("mopsRevenueByCompany Insert Complete")
+                except:
+                    logger.info("mopsRevenueByCompany Insert Error")
+                    return
+ 
+def updateCompList_mssql(db, Cdata):
+    pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
+    pwd = dectry(pwd_enc)
+    if db != "" and Cdata != []:
+        ary_data = np.array(Cdata)
+        sid_tuple = list(map(tuple, ary_data[:,0]))
+        comp_tuple = list(map(tuple, ary_data))
+        # 連結資料庫
+        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = pwd, database = "BIDC" ) as conn:
+            with conn.cursor() as cursor:
+                # 先刪資料
+                try:      
+                    cursor.executemany("DELETE FROM BIDC.dbo.mopsStockCompanyInfo WHERE StockID = %s", sid_tuple)
+                    conn.commit()
+                    logger.info("mopsStockCompanyInfo Delete Complete")
+                except:
+                    logger.info("mopsStockCompanyInfo Delete Error")
+                    return
+
+                # 寫入資料
+                try:
+                    cursor.executemany("INSERT INTO BIDC.dbo.mopsStockCompanyInfo (StockID, StockName, Market, Industry, EnShowName) VALUES (%s, %s, %s, %s, %s)", comp_tuple) 
+                    conn.commit()
+                    logger.info("mopsStockCompanyInfo Insert Complete")
+                except:
+                    logger.info("mopsStockCompanyInfo Insert Error")
+                    return    
+# # 寫資料到MS SQL(Company)
+# if data_company !=[]:
+#     SQL_Delete = ("DELETE FROM BIDC.dbo.mopsStockCompanyInfo WHERE StockID = ?")
+#     for id in data_company:
+#         value = [id[0]]
+#         cursor.execute(SQL_Delete, value)
+#         conn_sql.commit()
+#         print("Company ID", id[0], "Deleted!")
+#     SQL_Insert = ("INSERT INTO BIDC.dbo.mopsStockCompanyInfo (StockID, StockName, Market, Industry, EnShowName) VALUES (?, ?, ?, ?, ?)")
+#     for list in data_company:
+#         value = [ list[0], list[1], list[2], list[3], list[4] ]
+#         cursor.execute(SQL_Insert, value)
+#         conn_sql.commit()
+#         print("Company ID Data", list[0], "Updated!!")
+
+
 
 def getMonthFromToday(num):
     num = num * -1
@@ -158,6 +236,9 @@ def getMonthFromToday(num):
     return ym
 
 
+
+
+# %%
 cfg_fname = "./config/config.json"
 web_path = "./data/html_file"
 dict_catg = {"sii": "上市公司", "otc": "上櫃公司", "rotc": "興櫃公司", "pub": "公開發行公司"}
@@ -207,7 +288,7 @@ for catg in stockcatg:
 
         # 取table
         for ind in industy:
-            logger.info(period + dict_catg[catg] + ind + "Start \n")
+            logger.info(period + dict_catg[catg] + ind + "Start")
             try:
                 tb = root.find("th", text = re.compile(".*" + ind)).find_parent("table")
             except:
@@ -245,67 +326,41 @@ for catg in stockcatg:
                 if StockID != "":
                     key = [yyyymm, StockID]
                     if key not in key_list:
-                        collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark, market]
+                        collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark, market]                        
                         # 遇到PSMC要拆BU
                         psmc_lspf_val = splitPSMCRevenueByBU(collect, up_db)
                         if psmc_lspf_val == 0:
                             collect.append("")
+                            collect.append(int(CurrRevenue) * 1000)
                         else:
                             collect_tmp = collect.copy()
                             psmc_m_val = collect[3] - psmc_lspf_val
                             collect_tmp[3] = psmc_lspf_val
                             collect_tmp.append("L")
+                            collect_tmp.append(int(psmc_lspf_val) * 1000)
                             data_item.append(collect_tmp)
                             collect[3]  = psmc_m_val
                             collect.append("M")
+                            collect.append(int(psmc_m_val) * 1000)
                         data_item.append(collect)
                         key_list.append(key)
                     
                     # 收集公司清單的資料
                     collect = [StockID, StockName, market, cmpindusty]
                     if collect not in data_company:
-                        chk, shown = check_CompExist(df_Complist, collect)
+                        chk, shown = check_CompExist(df_Complist, collect, up_db)
                         if chk == "append":
                             collect.append("")
                             data_company.append(collect)    
                         if chk == "modify":
                             collect.append(shown)
                             data_company.append(collect)
-
-""" if data_item != []:
-    # 先刪資料
-    for ym in ym_list:
-        SQL_Delete = ("DELETE FROM BIDC.dbo.mopsRevenueByCompany WHERE YearMonth = '" + ym + "'")
-        cursor.execute(SQL_Delete)
-        conn_sql.commit()
-        print(ym, "Data Deleted!!")
-
-    # 寫資料到MS SQL(Revenue)
-    SQL_Insert = ("INSERT INTO BIDC.dbo.mopsRevenueByCompany (YearMonth, StockID, Revenue, Remark, BU) VALUES (?, ?, ?, ?, ?);")
-    # Insart資料
-    for list in data_item:
-        value = [ list[0], list[1], list[3]*1000, list[11], list[13] ]
-        cursor.execute(SQL_Insert, value)
-        conn_sql.commit()
-    print("Revenue Data Update Complete!!")
-
-# 寫資料到MS SQL(Company)
-if data_company !=[]:
-    SQL_Delete = ("DELETE FROM BIDC.dbo.mopsStockCompanyInfo WHERE StockID = ?")
-    for id in data_company:
-        value = [id[0]]
-        cursor.execute(SQL_Delete, value)
-        conn_sql.commit()
-        print("Company ID", id[0], "Deleted!")
-
-    SQL_Insert = ("INSERT INTO BIDC.dbo.mopsStockCompanyInfo (StockID, StockName, Market, Industry, EnShowName) VALUES (?, ?, ?, ?, ?)")
-    for list in data_company:
-        value = [ list[0], list[1], list[2], list[3], list[4] ]
-        cursor.execute(SQL_Insert, value)
-        conn_sql.commit()
-        print("Company ID Data", list[0], "Updated!!") """
-# conn_sql.close()
 # %%
+# 營收資料寫入資料庫中
+updateRevenue_mssql(up_db, data_item, ym_list)
+# 公司清單寫入資料庫中
+updateCompList_mssql(up_db, data_company)
+
 # 產生Excel File
 writeExcel(data_head, data_item, "revenue", up_xlsx)
 logger.info("Export Done! \n")
