@@ -78,17 +78,20 @@ def splitPSMCRevenueByBU(list, updb):
 
         with pymssql.connect( server = "8AEISS01", user = "sap_user", password = pwd, database = "BIDC" ) as conn:
             with conn.cursor() as cursor:
-                cursor.execute("""SELECT SUM(revenu) as val 
-                                    FROM ( 
-                                        SELECT SUM(IIF( FKART NOT IN ('{type1}', '{type2}'), LNETW * -1, LNETW)) as revenu
-                                            FROM SAP.dbo.sapRevenue
-                                            WHERE FKDAT LIKE '{date1}'
-                                        UNION
-                                        SELECT SUM(IIF( FKART NOT IN ('{type1}', '{type2}'), LNETW * -1, LNETW)) as revenu
-                                            FROM F12SAP.dbo.sapRevenue
-                                            WHERE FKDAT LIKE '{date1}'
-                                        ) as a""".format(type1 = "F2", type2 = "L2", date1 = ym) )
-                revenueval = round([float(r[0]) for r in cursor.fetchall()][0] / 1000, 0)
+                try:
+                    cursor.execute("""SELECT SUM(revenu) as val 
+                                        FROM ( 
+                                            SELECT SUM(IIF( FKART NOT IN ('{type1}', '{type2}'), LNETW * -1, LNETW)) as revenu
+                                                FROM SAP.dbo.sapRevenue
+                                                WHERE FKDAT LIKE '{date1}'
+                                            UNION
+                                            SELECT SUM(IIF( FKART NOT IN ('{type1}', '{type2}'), LNETW * -1, LNETW)) as revenu
+                                                FROM F12SAP.dbo.sapRevenue
+                                                WHERE FKDAT LIKE '{date1}'
+                                            ) as a""".format(type1 = "F2", type2 = "L2", date1 = ym) )
+                    revenueval = round([float(r[0]) for r in cursor.fetchall()][0] / 1000, 0)
+                except:
+                    logger.exception("message")
     return revenueval
 # 取得欄位中的值
 def get_tbColval(rowlist, colid):
@@ -126,7 +129,7 @@ def writeExcel(DataH, DataI, fname, genxls):
                 logger.info("Create " + file_path + "/" + fname + ".xlsx Success!!")
                 return print("Create " + fname + ".xlsx Success!!")
             except:
-                logger.info("Create " + file_path + "/" + fname + ".xlsx Fail!!")
+                logger.exception("message")
                 return print("Create " + fname + ".xlsx Fail!!")
         else:
             logger.info("No Data to Create Excel File!")
@@ -149,10 +152,15 @@ def getComplist_mssql(db):
         head = ["StockID", "StockName", "Market", "Industry", "EnShowName"]
         with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = pwd, database = "BIDC" ) as conn:
             with conn.cursor() as cursor:
-                cursor.execute("SELECT StockID, StockName, Market, Industry, EnShowName FROM BIDC.dbo.mopsStockCompanyInfo")
-                quary = cursor.fetchall()
-                df_list = pd.DataFrame(quary, columns = head)
-    return df_list
+                try:
+                    cursor.execute("SELECT StockID, StockName, Market, Industry, EnShowName FROM BIDC.dbo.mopsStockCompanyInfo")
+                    quary = cursor.fetchall()
+                    df_list = pd.DataFrame(quary, columns = head)
+                    return df_list
+                except:
+                    logger.exception("message")
+                    return
+    
 
 def updateRevenue_mssql(db, DataI, ymlist):
     pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
@@ -168,19 +176,19 @@ def updateRevenue_mssql(db, DataI, ymlist):
             with conn.cursor() as cursor:
                 # 先刪資料
                 try:      
-                    cursor.executemany("DELETE FROM BIDC.dbo.mopsRevenueByCompany_tmp WHERE YearMonth = %s", ym_tuple)
+                    cursor.executemany("DELETE FROM BIDC.dbo.mopsRevenueByCompany WHERE YearMonth = %s", ym_tuple)
                     conn.commit()
                     logger.info("mopsRevenueByCompany Delete Complete")
                 except:
-                    logger.info("mopsRevenueByCompany Delete Error")
+                    logger.exception("message")
                     return
                 # 寫入資料
                 try:
-                    cursor.executemany("INSERT INTO BIDC.dbo.mopsRevenueByCompany_tmp (YearMonth, BU, StockID, Revenue, Remark) VALUES (%s, %s, %s, %d, %s)", item_tuple) 
+                    cursor.executemany("INSERT INTO BIDC.dbo.mopsRevenueByCompany (YearMonth, BU, StockID, Revenue, Remark) VALUES (%s, %s, %s, %d, %s)", item_tuple) 
                     conn.commit()
                     logger.info("mopsRevenueByCompany Insert Complete")
                 except:
-                    logger.info("mopsRevenueByCompany Insert Error")
+                    logger.exception("message")
                     return
  
 def updateCompList_mssql(db, Cdata):
@@ -199,7 +207,7 @@ def updateCompList_mssql(db, Cdata):
                     conn.commit()
                     logger.info("mopsStockCompanyInfo Delete Complete")
                 except:
-                    logger.info("mopsStockCompanyInfo Delete Error")
+                    logger.exception("message")
                     return
 
                 # 寫入資料
@@ -208,24 +216,8 @@ def updateCompList_mssql(db, Cdata):
                     conn.commit()
                     logger.info("mopsStockCompanyInfo Insert Complete")
                 except:
-                    logger.info("mopsStockCompanyInfo Insert Error")
+                    logger.exception("message")
                     return    
-# # 寫資料到MS SQL(Company)
-# if data_company !=[]:
-#     SQL_Delete = ("DELETE FROM BIDC.dbo.mopsStockCompanyInfo WHERE StockID = ?")
-#     for id in data_company:
-#         value = [id[0]]
-#         cursor.execute(SQL_Delete, value)
-#         conn_sql.commit()
-#         print("Company ID", id[0], "Deleted!")
-#     SQL_Insert = ("INSERT INTO BIDC.dbo.mopsStockCompanyInfo (StockID, StockName, Market, Industry, EnShowName) VALUES (?, ?, ?, ?, ?)")
-#     for list in data_company:
-#         value = [ list[0], list[1], list[2], list[3], list[4] ]
-#         cursor.execute(SQL_Insert, value)
-#         conn_sql.commit()
-#         print("Company ID Data", list[0], "Updated!!")
-
-
 
 def getMonthFromToday(num):
     num = num * -1
@@ -236,9 +228,9 @@ def getMonthFromToday(num):
     return ym
 
 
-
-
 # %%
+logger = create_logger("./log")
+logger.info("Start")
 cfg_fname = "./config/config.json"
 web_path = "./data/html_file"
 dict_catg = {"sii": "上市公司", "otc": "上櫃公司", "rotc": "興櫃公司", "pub": "公開發行公司"}
@@ -261,11 +253,7 @@ up_db = getConfigData(cfg_fname, "update_db")
 # 取得公司的清單(先前已存在資料庫中)
 df_Complist = getComplist_mssql(up_db)
 
-
 # %%
-logger = create_logger("./log")
-logger.info("Start \n")
-
 data_head = []
 data_item = []
 data_company = []
@@ -358,9 +346,10 @@ for catg in stockcatg:
 # %%
 # 營收資料寫入資料庫中
 updateRevenue_mssql(up_db, data_item, ym_list)
+
 # 公司清單寫入資料庫中
 updateCompList_mssql(up_db, data_company)
 
 # 產生Excel File
 writeExcel(data_head, data_item, "revenue", up_xlsx)
-logger.info("Export Done! \n")
+logger.info("Export Done!")
