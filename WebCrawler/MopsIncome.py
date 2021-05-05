@@ -15,9 +15,9 @@ from util.EncryptionDecrypt import dectry
 # 取BeautifulSoup物件
 def getBSobj_genFile(Category, YM, genfile, wpath):
     head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
-    url_model = "https://mops.twse.com.tw/nas/t21/{}/t21sc03_{}_0.html"
+    url= f"https://mops.twse.com.tw/nas/t21/{Category}/t21sc03_{YM}_0.html"
     # 處理網址
-    url = url_model.format(Category, YM)
+    # url = url_model.format(Category, YM)
     urlwithhead = req.get(url, headers = head_info)
     urlwithhead.encoding = "big5"
     
@@ -28,7 +28,7 @@ def getBSobj_genFile(Category, YM, genfile, wpath):
         if os.path.exists(wpath) == False:
             os.makedirs(wpath)
         rootlxml = bs(urlwithhead.text, "lxml")
-        with open ( web_path + "/imcome_" + Category + "_" + YM + ".html", mode = "w", encoding = "UTF-8") as web_html:
+        with open ( f"{web_path}/imcome_{Category}_{YM}.html", mode = "w", encoding = "UTF-8") as web_html:
             web_html.write(rootlxml.prettify())
     #傳出BeautifulSoup物件
     return bs(urlwithhead.text, "lxml")
@@ -50,9 +50,9 @@ def get_Header(TBobj):
             headtext.append(head_list)
     return headtext
 
-def get_SQLdata(SQLconn, sqlselect):
-    df_comp = pd.read_sql(sqlselect, SQLconn)
-    return df_comp
+# def get_SQLdata(SQLconn, sqlselect):
+#     df_comp = pd.read_sql(sqlselect, SQLconn)
+#     return df_comp
 
 def check_CompExist(comp_df, chk_stockid, updb):
     status = shownname = ""
@@ -79,16 +79,17 @@ def splitPSMCRevenueByBU(list, updb):
         with pymssql.connect( server = "8AEISS01", user = "sap_user", password = pwd, database = "BIDC" ) as conn:
             with conn.cursor() as cursor:
                 try:
-                    cursor.execute("""SELECT SUM(revenu) as val 
+                    type1, type2 = "F2", "L2"
+                    cursor.execute(f"""SELECT SUM(revenu) as val 
                                         FROM ( 
                                             SELECT SUM(IIF( FKART NOT IN ('{type1}', '{type2}'), LNETW * -1, LNETW)) as revenu
                                                 FROM SAP.dbo.sapRevenue
-                                                WHERE FKDAT LIKE '{date1}'
+                                                WHERE FKDAT LIKE '{ym}'
                                             UNION
                                             SELECT SUM(IIF( FKART NOT IN ('{type1}', '{type2}'), LNETW * -1, LNETW)) as revenu
                                                 FROM F12SAP.dbo.sapRevenue
-                                                WHERE FKDAT LIKE '{date1}'
-                                            ) as a""".format(type1 = "F2", type2 = "L2", date1 = ym) )
+                                                WHERE FKDAT LIKE '{ym}'
+                                            ) as a""")
                     revenueval = round([float(r[0]) for r in cursor.fetchall()][0] / 1000, 0)
                 except:
                     logger.exception("message")
@@ -114,7 +115,7 @@ def writeExcel(DataH, DataI, fname, genxls):
     if genxls != "":
         if DataH != [] and DataI !=[]:
             # 存成檔案時的目錄
-            file_path = "./data/download_file"
+            file_path = r"./data/download_file"
             # 建立目錄,不存在才建...
             if os.path.exists(file_path) == False:
                 os.makedirs(file_path)
@@ -125,12 +126,12 @@ def writeExcel(DataH, DataI, fname, genxls):
             df_imcome = pd.DataFrame(DataI, columns = DataH)
             ## 寫到Excel
             try:
-                df_imcome.to_excel(file_path + "/" + fname + ".xlsx", index = False)
-                logger.info("Create " + file_path + "/" + fname + ".xlsx Success!!")
-                return print("Create " + fname + ".xlsx Success!!")
+                df_imcome.to_excel(rf"{file_path}/{fname}.xlsx", index = False)
+                logger.info(f"Create {file_path}/{fname}.xlsx Success!!")
+                return print(f"Create {fname}.xlsx Success!!")
             except:
                 logger.exception("message")
-                return print("Create " + fname + ".xlsx Fail!!")
+                return print(f"Create {fname}.xlsx Fail!!")
         else:
             logger.info("No Data to Create Excel File!")
             return print("Did not Collect Data!!")
@@ -276,13 +277,13 @@ for catg in stockcatg:
 
         # 取table
         for ind in industy:
-            logger.info(period + dict_catg[catg] + ind + "Start")
+            logger.info(f"{period} {dict_catg[catg]} {ind} Start")
             try:
                 tb = root.find("th", text = re.compile(".*" + ind)).find_parent("table")
             except:
                 continue
             # 把取出的Table html資料存成File
-            with open (web_path + "/tb_" + ind + "_" + catg + "_" + period + ".html", mode = "w", encoding = "UTF-8") as web_html:
+            with open (rf"{web_path}/tb_{ind}_{catg}_{period}.html", mode = "w", encoding = "UTF-8") as web_html:
                 web_html.write(tb.prettify())
             # 取表頭資料
             if data_head == []:
