@@ -1,11 +1,11 @@
-
+# %%
 import os
 import requests as req
 from bs4 import BeautifulSoup as bs
 import pandas as pd
 import datetime
 from datequarter import DateQuarter
-import pyodbc as odbc
+# import pyodbc as odbc
 import time
 import json
 
@@ -15,15 +15,86 @@ def getConfigData(file_path, datatype):
     list_val = jfile[datatype]
     return list_val
 
+def getPerviousQuarter():
+    PreviousQuarter = DateQuarter.from_date(datetime.date.today()) - 1
+    y = str(PreviousQuarter._year)
+    q = str(PreviousQuarter._quarter)
+    return y, q
+
+# 取BeautifulSoup物件
+def getBSobj_genFile(StockID_List, genfile):
+    head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
+    url= f"https://mops.twse.com.tw/server-java/t164sb01?step=1&CO_ID={StockID_List[0]}&SYEAR={StockID_List[1]}&SSEASON={StockID_List[2]}&REPORT_ID=C"
+    wpath = "html_file"
+    # 處理網址
+    # url = url_model.format(Category, YM)
+    urlwithhead = req.get(url, headers = head_info)
+    urlwithhead.encoding = "big5"
+
+    chk_nodata = bs(urlwithhead.text, "lxml").find("body").text
+    if chk_nodata[0:5] == "檔案不存在":
+        return None
+
+    ## 寫網頁原始碼到檔案中(有值就要產生File)
+    if genfile != "":
+        # 產生出的檔案存下來
+        ## 建立目錄,不存在才建...    
+        if os.path.exists(wpath) == False:
+            os.makedirs(wpath)
+        rootlxml = bs(urlwithhead.text, "lxml")
+        with open ( f"{wpath}/FinancialWeb_{StockID_List[0]}_{StockID_List[1]}Q{StockID_List[2]}.html", mode = "w", encoding = "UTF-8") as web_html:
+            web_html.write(rootlxml.prettify())
+    #傳出BeautifulSoup物件
+    return bs(urlwithhead.text, "lxml")
+
+# 從BS物件中抓出特定的Table
+def getTBobj_genFile(bsobj, tbID, genfile, StockID_List):
+    tb_data = bsobj.find_all("table")[tbID]   
+    
+    if genfile != "":
+        wpath = "html_file"
+        fname = "tb_" + tb_data.find_all("th")[0].find("span", class_ ="en").text.strip().replace(" ","")
+        with open (f"{wpath}/{fname}_{StockID_List[0]}_{StockID_List[1]}Q{StockID_List[2]}.html", mode = "w", encoding = "UTF-8") as web_html:
+            web_html.write(tb_data.prettify())
+
+        # fname = ""
+        # if tbID == 0:
+        #     fname = "tb_BalanceSheet"
+        # if tbID == 1:
+        #     fname = "tb_ComprehensiveIncome"
+        # if tbID == 2:
+        #     fname = "tb_CashFlow"
+
+        # tb = bsobj.find_all("table")[tbID]   
+        # with open (web_path + "/" + fname + "_" + StockID + "_" + Fyear + "Q" + Fquarter + ".html", mode = "w", encoding = "UTF-8") as web_html:
+        #     web_html.write(tb.prettify())
+
+    return  tb_data
+# %%
+cfg_fname = "./config/config.json"
+
+year, quarter = getPerviousQuarter()
+
+StockList = getConfigData(cfg_fname, "stocklist")
 
 
+for StockID in StockList:
+    # 把Stock ID / 年 / 季放到一個List中
+    ID_Y_Q = [StockID, year, quarter]
+    # 取得BS所產生的Data
+    bs_obj = getBSobj_genFile(ID_Y_Q, "X")
+    if bs_obj == None:
+        print (f"{StockID}沒有{year}_Q{quarter}的資料!!")
+        continue
+
+    tb_obj_Balance = getTBobj_genFile(bs_obj, 1, "X", ID_Y_Q)
+        
 
 
-
-
-
-
-
+# %%
+import datetime
+datetime.date.today()
+# %%
 
 # 取得網址相關資訊
 # url = "https://mops.twse.com.tw/server-java/t164sb01?step=1&CO_ID=3702&SYEAR=2019&SSEASON=3&REPORT_ID=C"
@@ -66,35 +137,8 @@ cursor = conn_sql.cursor()
 cursor_8aeiss01 = conn_8aeiss01.cursor()
 
 
-# 取得網頁轉換成BS物件
-def get_BSobj(StockID, Fyear, Fquarter, genfile):
-    # 處理網址
-    url = url_templete.format(StockID, Fyear, Fquarter)
-    urlwithhead = req.get(url, headers = head_info)
-    urlwithhead.encoding = "big5"
-    # 寫網頁原始碼到檔案中(有值就要產生File)
-    if genfile != "":
-        rootlxml = bs(urlwithhead.text, "lxml")
-        with open (web_path + "/FinancialWeb_" + StockID + "_" + Fyear + "Q" + Fquarter + ".html", mode = "w", encoding = "UTF-8") as web_html:
-            web_html.write(rootlxml.prettify())
-    #傳出BeautifulSoup物件
-    return bs(urlwithhead.text, "lxml")
-# 從BS物件中抓出特定的Table
-def get_TBobj(bsobj, tbID, StockID, Fyear, Fquarter, genfile):
-    if genfile != "":
-        fname = ""
-        if tbID == 0:
-            fname = "tb_BalanceSheet"
-        if tbID == 1:
-            fname = "tb_ComprehensiveIncome"
-        if tbID == 2:
-            fname = "tb_CashFlow"
 
-        tb = bsobj.find_all("table")[tbID]   
-        with open (web_path + "/" + fname + "_" + StockID + "_" + Fyear + "Q" + Fquarter + ".html", mode = "w", encoding = "UTF-8") as web_html:
-            web_html.write(tb.prettify())
 
-    return  bsobj.find_all("table")[tbID]
 # 給定會科,然後取回值
 def get_itemval(tbobj, GL_Account):
     try:
