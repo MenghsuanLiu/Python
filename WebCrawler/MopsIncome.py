@@ -111,11 +111,12 @@ def getConfigData(file_path, datatype):
     list_val = jfile[datatype]
     return list_val
 
-def writeExcel(DataH, DataI, fname, genxls):
+def writeExcel(cfgfile, DataH, DataI, fname, genxls):
     if genxls != "":
         if DataH != [] and DataI !=[]:
             # 存成檔案時的目錄
-            file_path = r"./data/download_file"
+            # file_path = r"./data/download_file"
+            file_path = getConfigData(cfgfile, "filepath")
             # 建立目錄,不存在才建...
             if os.path.exists(file_path) == False:
                 os.makedirs(file_path)
@@ -162,7 +163,6 @@ def getComplist_mssql(db):
                     logger.exception("message")
                     return
     
-
 def updateRevenue_mssql(db, DataI, ymlist):
     pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
     pwd = dectry(pwd_enc)
@@ -233,7 +233,7 @@ def getMonthFromToday(num):
 logger = create_logger("./log")
 logger.info("Start")
 cfg_fname = "./config/config.json"
-web_path = "./data/html_file"
+# web_path = "./data/html_file"
 dict_catg = {"sii": "上市公司", "otc": "上櫃公司", "rotc": "興櫃公司", "pub": "公開發行公司"}
 
 # 取得需要抓取的年月清單
@@ -241,16 +241,22 @@ try:
     ym = getConfigData(cfg_fname, "yearmon")
 except:
     ym = getMonthFromToday(-1)  #-1 往前一個月
-# 取得市場類別的清單
 
+# 取得web檔存放路徑
+web_path = getConfigData(cfg_fname, "webpath") # web_path = "./data/html_file"
+     
+# 取得市場類別的清單
 stockcatg = getConfigData(cfg_fname, "stocktype") # stockcatg = ["sii", "otc", "rotc", "pub"]
 
 # 取得產業別的清單
 industy = getConfigData(cfg_fname, "industygroup") # industy = ["半導體", "電子工業"]
+
 # 判斷是否需要產生Excel File
 up_xlsx = getConfigData(cfg_fname, "update_xls")
+
 # 判斷是否Update DB
 up_db = getConfigData(cfg_fname, "update_db")
+
 # 取得公司的清單(先前已存在資料庫中)
 df_Complist = getComplist_mssql(up_db)
 
@@ -352,5 +358,5 @@ updateRevenue_mssql(up_db, data_item, ym_list)
 updateCompList_mssql(up_db, data_company)
 
 # 產生Excel File
-writeExcel(data_head, data_item, "revenue", up_xlsx)
+writeExcel(cfg_fname, data_head, data_item, "revenue", up_xlsx)
 logger.info("Export Done!")
