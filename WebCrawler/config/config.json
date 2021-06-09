@@ -1,6 +1,13 @@
 {
     "stocktype":["sii",	"otc", "rotc",	"pub"],
     "industygroup":["半導體", "電子工業"],
+    "stocklist": ["2330", "2303", "2408", "2344", "2337", "5347", "6770"],
+    "glst0": ["1XXX", "2XXX", "3110"],
+    "glst1": ["4000", "5950", "6000", "6500", "6900", "7000", "8610", "7950", "8200", "9750", "6300"],
+    "glst2": ["A10000", "A20900", "A20100", "A20200"],
     "update_xls": "X",
-    "update_db": ""
+    "update_db": "",
+    "filepath": ".data/download_file",
+    "webpath": ".data/html_file",
+    "gen_html": ""
 }

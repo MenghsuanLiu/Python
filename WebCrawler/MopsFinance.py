@@ -44,6 +44,32 @@ def getQuarterAVGRate_mssql(Fyear, Fquarter):
                 # logger.exception("message")
                 return 0
 
+def getWaferQty_mssql(CompID, QDate, wafersize):    
+    if CompID == "6770":
+        pwd_enc = "215_203_225_72_88_148_169_83_98_"
+        pwd = dectry(pwd_enc)
+        with pymssql.connect( server = "8AEISS01", user = "sap_user", password = pwd ) as conn:
+            with conn.cursor() as cursor:
+                try:
+                    if wafersize == 8:
+                        cursor.execute(f"SELECT SUM(IIF( FKART NOT IN ('F2', 'L2'), FKIMG * -1, FKIMG)) as Qty FROM SAP.dbo.sapRevenue WHERE DATEADD(qq, DATEDIFF(qq, 0, FKDAT) , 0) = '{QDate}'")
+                    if wafersize == 12:
+                        cursor.execute(f"SELECT SUM(Qty) as Qty FROM ( SELECT SUM(IIF( FKART NOT IN ('F2', 'L2'), FKIMG * -1, FKIMG)) as Qty FROM F12SAP.dbo.sapRevenue WHERE DATEADD(qq, DATEDIFF(qq, 0, FKDAT) , 0) = '{QDate}' UNION SELECT SUM(IIF( FKART NOT IN ('F2', 'ZL2', 'Z001'), WQTY * -1, WQTY)) as Qty FROM M12SAP.dbo.sapRevenue WHERE DATEADD(qq, DATEDIFF(qq, 0, FKDAT) , 0) = '{QDate}' ) as a")
+                except:
+                    return 0
+        return round(cursor.fetchall()[0][0] / 1000, 0)
+    else:
+        pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
+        pwd = dectry(pwd_enc)
+        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = pwd, database = "BIDC" ) as conn:
+            with conn.cursor() as cursor:                    
+                try:
+                    cursor.execute(f"SELECT WaferQty_{str(wafersize)} FROM BIDC.dbo.mopsFinancialByCompany WHERE YQ_Date = '{QDate}' AND StockID = '{CompID}'")
+                    return cursor.fetchall()[0][0]
+                except:
+                    return 0 
+
+
 # 取BeautifulSoup物件
 def getBSobj_genFile(StockID_List, genfile):
     head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
@@ -128,8 +154,10 @@ GL2 = getConfigData(cfg_fname, "glst2")
 HeaderLine = []
 # 年/季的第一天
 YQFirstDate = ""
+# %%
 # 取得平均ExchangeRate
 AvgRate = getQuarterAVGRate_mssql(year, quarter)
+Qty_8 = getWaferQty_mssql("6770", "2021-01-01", 8)
 # %%
 for StockID in StockList:
     # 把Stock ID / 年 / 季放到一個List中
