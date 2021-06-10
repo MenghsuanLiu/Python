@@ -163,8 +163,8 @@ def getFirst3PeriodImcome(StockID_List, file_path):
                     itemlist.append(float(val))
                 else:
                     itemlist.append(int(val))
-            # itemlist.index(GL_Imcome)
-            return itemlist
+            itemdict = dict(zip(GL_Imcome, itemlist))
+            return itemdict
         except:
             return 0
     else:
@@ -200,11 +200,6 @@ def getFirst3PeriodImcome(StockID_List, file_path):
 #                     gl_recod += 1
 # %%
 cfg_fname = "./config/config.json"
-
-ID_Y_Q = ["2330", 2020, 4]
-
-a = getFirst3PeriodImcome(ID_Y_Q, cfg_fname)
-# %%
 
 year, quarter = getPerviousQuarter()
 
