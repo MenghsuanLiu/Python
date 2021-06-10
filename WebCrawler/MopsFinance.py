@@ -32,43 +32,48 @@ def getQuarterAVGRate_mssql(Fyear, Fquarter):
     # 季轉月區間
     max_mon = int(Fquarter) * 3
     min_mon = max_mon - 2
-
-    with pymssql.connect( server = "8AEISS01", user = "sap_user", password = pwd, database = "BIDC" ) as conn:
-        with conn.cursor() as cursor:
-            try:
-                cursor.execute(f"SELECT UKURS FROM SAP.dbo.sapExchangeRateByMonth WHERE GJAHR = {Fyear} AND MONAT >= {min_mon} AND MONAT <= {max_mon}")
-                # val = cursor.fetchall()
-                ratelist = [ float(r[0]) for r in cursor.fetchall() ]
-                return round(sum(ratelist) / len(ratelist), 2)
-            except:
-                # logger.exception("message")
-                return 0
-
-def getWaferQty_mssql(CompID, QDate, wafersize):    
-    if CompID == "6770":
-        pwd_enc = "215_203_225_72_88_148_169_83_98_"
-        pwd = dectry(pwd_enc)
-        with pymssql.connect( server = "8AEISS01", user = "sap_user", password = pwd ) as conn:
+    try:
+        with pymssql.connect( server = "8AEISS01", user = "sap_user", password = pwd, database = "BIDC" ) as conn:
             with conn.cursor() as cursor:
                 try:
-                    if wafersize == 8:
-                        cursor.execute(f"SELECT SUM(IIF( FKART NOT IN ('F2', 'L2'), FKIMG * -1, FKIMG)) as Qty FROM SAP.dbo.sapRevenue WHERE DATEADD(qq, DATEDIFF(qq, 0, FKDAT) , 0) = '{QDate}'")
-                    if wafersize == 12:
-                        cursor.execute(f"SELECT SUM(Qty) as Qty FROM ( SELECT SUM(IIF( FKART NOT IN ('F2', 'L2'), FKIMG * -1, FKIMG)) as Qty FROM F12SAP.dbo.sapRevenue WHERE DATEADD(qq, DATEDIFF(qq, 0, FKDAT) , 0) = '{QDate}' UNION SELECT SUM(IIF( FKART NOT IN ('F2', 'ZL2', 'Z001'), WQTY * -1, WQTY)) as Qty FROM M12SAP.dbo.sapRevenue WHERE DATEADD(qq, DATEDIFF(qq, 0, FKDAT) , 0) = '{QDate}' ) as a")
+                    cursor.execute(f"SELECT UKURS FROM SAP.dbo.sapExchangeRateByMonth WHERE GJAHR = {Fyear} AND MONAT >= {min_mon} AND MONAT <= {max_mon}")
+                    # val = cursor.fetchall()
+                    ratelist = [ float(r[0]) for r in cursor.fetchall() ]
+                    return round(sum(ratelist) / len(ratelist), 2)
                 except:
+                    # logger.exception("message")
                     return 0
-        return round(cursor.fetchall()[0][0] / 1000, 0)
-    else:
-        pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
-        pwd = dectry(pwd_enc)
-        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = pwd, database = "BIDC" ) as conn:
-            with conn.cursor() as cursor:                    
-                try:
-                    cursor.execute(f"SELECT WaferQty_{str(wafersize)} FROM BIDC.dbo.mopsFinancialByCompany WHERE YQ_Date = '{QDate}' AND StockID = '{CompID}'")
-                    return cursor.fetchall()[0][0]
-                except:
-                    return 0 
+    except:
+        return 0
 
+# 取得片數(PSMC從實際資料取,其他取己存入的資料)
+def getWaferQty_mssql(CompID, QDate, wafersize):    
+    try:
+        if CompID == "6770":
+            pwd_enc = "215_203_225_72_88_148_169_83_98_"
+            pwd = dectry(pwd_enc)
+            with pymssql.connect( server = "8AEISS01", user = "sap_user", password = pwd ) as conn:
+                with conn.cursor() as cursor:
+                    try:
+                        if wafersize == 8:
+                            cursor.execute(f"SELECT SUM(IIF( FKART NOT IN ('F2', 'L2'), FKIMG * -1, FKIMG)) as Qty FROM SAP.dbo.sapRevenue WHERE DATEADD(qq, DATEDIFF(qq, 0, FKDAT) , 0) = '{QDate}'")
+                        if wafersize == 12:
+                            cursor.execute(f"SELECT SUM(Qty) as Qty FROM ( SELECT SUM(IIF( FKART NOT IN ('F2', 'L2'), FKIMG * -1, FKIMG)) as Qty FROM F12SAP.dbo.sapRevenue WHERE DATEADD(qq, DATEDIFF(qq, 0, FKDAT) , 0) = '{QDate}' UNION SELECT SUM(IIF( FKART NOT IN ('F2', 'ZL2', 'Z001'), WQTY * -1, WQTY)) as Qty FROM M12SAP.dbo.sapRevenue WHERE DATEADD(qq, DATEDIFF(qq, 0, FKDAT) , 0) = '{QDate}' ) as a")
+                        return round(cursor.fetchall()[0][0] / 1000, 0)
+                    except:
+                        return 0        
+        else:
+            pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
+            pwd = dectry(pwd_enc)
+            with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = pwd, database = "BIDC" ) as conn:
+                with conn.cursor() as cursor:                    
+                    try:
+                        cursor.execute(f"SELECT WaferQty_{str(wafersize)} FROM BIDC.dbo.mopsFinancialByCompany WHERE YQ_Date = '{QDate}' AND StockID = '{CompID}'")
+                        return cursor.fetchall()[0][0]
+                    except:
+                        return 0
+    except:
+        return 0
 
 # 取BeautifulSoup物件
 def getBSobj_genFile(StockID_List, genfile):
@@ -117,7 +122,7 @@ def getHeadText(tbobj, GL_Account):
 # 取得Header
 def getHeaderLine(bsobj, cfg):
     data_head = []
-    FixList = ["公司", "日期", "PSMC平均匯率"]
+    FixList = ["公司", "日期", "PSMC平均匯率", "WaferQty_8", "WaferQty_12"]
     # 處理固定欄位
     for fixval in FixList:
         data_head.append(fixval)
@@ -127,17 +132,79 @@ def getHeaderLine(bsobj, cfg):
         tbobj = getTBobj_genFile(bsobj, i, "", [])
         for gaccount in GL:
             val = getHeadText(tbobj, gaccount)
-            data_head.append(val)
+            data_head.append(val)     
     return data_head
 
+def getItemVal(tbobj, GLAccount):
+    try:
+        val = tbobj.find("td", text = GLAccount).find_parent("tr").find_all("td")[2].text.strip().replace(",", "").replace("(", "-").replace(")", "")
+    except:
+        val = 0
+    return val
 
 def getQuarterFirstDate(tbobj):
     show_date = tbobj.find_all("th")[3].find("span", class_ = "en").text.split("/")
     # 因為上面的月只會show 3, 6, 9, 12所以不用擔心跨年的問題
     return datetime.date(int(show_date[0]), int(show_date[1]) - 2, 1)
 
+def getFirst3PeriodImcome(StockID_List, file_path):
+    ID_Y_Q1 = [StockID_List[0], StockID_List[1], 1]
+    itemlist = []
+    # 只有第4季才需把前三季的加總
+    if StockID_List[2] == 4:
+        BsObj_Q1 = getBSobj_genFile(ID_Y_Q1, "")
+        GL_Imcome = getConfigData(file_path, "glst1")
+
+        tbObj_Imcome_Q1 =  getTBobj_genFile(BsObj_Q1, 1, "", ID_Y_Q1)
+        try:
+            for gl in GL_Imcome:
+                val = getItemVal(tbObj_Imcome_Q1, gl)
+                if gl == "9750":
+                    itemlist.append(float(val))
+                else:
+                    itemlist.append(int(val))
+            # itemlist.index(GL_Imcome)
+            return itemlist
+        except:
+            return 0
+    else:
+        return 0     
+# if quarter == "4":
+#         item_val_1q = []        
+#         root = get_BSobj(CompanyID, year, "1", "")
+#         try:
+#             tb_ComprehensiveIncome_last = get_TBobj( root, 1, CompanyID, year, "1", "")
+#             for GL in gl02_list:
+#                 val = get_itemval(tb_ComprehensiveIncome_last, GL)
+#                 if GL == "9750":
+#                     item_val_1q.append(float(val))
+#                 else:        
+#                     item_val_1q.append(int(val))
+#             item_imcome = item_val_1q            
+#         except:
+#             item_imcome = []
+         
+#         if item_imcome != []:
+#             for q_bef in ("2", "3"):
+#                 item_val_1q = []
+#                 root = get_BSobj(CompanyID, year, q_bef, "")
+#                 tb_ComprehensiveIncome_last = get_TBobj( root, 1, CompanyID, year, q_bef, "")
+#                 gl_recod = 0
+#                 for GL in gl02_list:
+#                     val = get_itemval(tb_ComprehensiveIncome_last, GL)                
+#                     if GL == "9750":
+#                         item_imcome[gl_recod] += float(val)
+#                     else:
+#                         item_imcome[gl_recod] += int(val)
+
+#                     gl_recod += 1
 # %%
 cfg_fname = "./config/config.json"
+
+ID_Y_Q = ["2330", 2020, 4]
+
+a = getFirst3PeriodImcome(ID_Y_Q, cfg_fname)
+# %%
 
 year, quarter = getPerviousQuarter()
 
@@ -152,14 +219,14 @@ GL2 = getConfigData(cfg_fname, "glst2")
 
 # HeaderText 
 HeaderLine = []
+ItemData = []
 # 年/季的第一天
 YQFirstDate = ""
-# %%
 # 取得平均ExchangeRate
 AvgRate = getQuarterAVGRate_mssql(year, quarter)
-Qty_8 = getWaferQty_mssql("6770", "2021-01-01", 8)
 # %%
 for StockID in StockList:
+    itemlist = []
     # 把Stock ID / 年 / 季放到一個List中
     ID_Y_Q = [StockID, year, quarter]
     # 取得BS所產生的Data
@@ -181,7 +248,36 @@ for StockID in StockList:
     # 取得item的固定值--季的第一天
     if YQFirstDate == "":
         YQFirstDate = getQuarterFirstDate(tbObj_Balance)
-    
+    # 在當季的Wafer Qty
+    WQTY_8  = getWaferQty_mssql(StockID, YQFirstDate, 8)
+    WQTY_12 = getWaferQty_mssql(StockID, YQFirstDate, 12)
+
+    for val in (StockID, str(YQFirstDate), float(AvgRate), WQTY_8, WQTY_12):
+        itemlist.append(val)
+
+    # 總資產(1XXX) / 總負債(2XXX) / 普通股股本(3110)
+    for gl in GL0:        
+        ## 抓第三個column,當季的值
+        val = getItemVal(tbObj_Balance, gl)   
+        itemlist.append(int(val) * 1000)
+
+    # 營業收入(4000) / 營業毛利(5950) / 營業費用(6000) / 其他收益(6500) / 營業利益(6900) / 營業外收支(7000) / 母公司業主(8610) / 所得稅費用(7950)
+    # 稅後淨利(8200) / 稀釋每股盈餘(9850) / 研究發展費用(6300)
+    # for gl in GL1:
+    #     ## 抓第三個column,當季的值
+    #     # 判斷是否有該GL Account(有才抓值,沒有就給0)
+    #     val = getItemVal(tbObj_Income, gl)
+    #     try:
+    #         pass_val = item_imcome[gl_recod]
+    #     except:
+    #         pass_val = 0
+        
+    #     gl_recod += 1
+
+    #     if GL == "9750":
+    #         item_list.append(float(item_val) - pass_val)
+    #     else:        
+    #         item_list.append((int(item_val) - pass_val) * 1000)
 
 # %%
 import datetime
@@ -228,57 +324,6 @@ conn_8aeiss01 = odbc.connect(Driver = '{SQL Server Native Client 11.0}', Server 
 cursor = conn_sql.cursor()
 cursor_8aeiss01 = conn_8aeiss01.cursor()
 
-
-
-
-# 給定會科,然後取回值
-def get_itemval(tbobj, GL_Account):
-    try:
-        val = tbobj.find("td", text = GL_Account).find_parent("tr").find_all("td")[2].text.strip().replace(",", "").replace("(", "-").replace(")", "")
-    except:
-        val = 0
-    return val
-
-
-
-# PSMC當月8"及12"片數
-# list = ["公司", "日期", "PSMC平均匯率"....]
-def get_waferqty(cursor, cursorpsmc, list, wafer):
-    SQL_sum = ""
-    if list[0] == "6770":
-        ym = list[1]
-        # ym = ym.split("-")[0] + str(ym.split("-")[1] if int(ym.split("-")[1]) >= 10 else "0" + ym.split("-")[1]) +"01"
-        if wafer == 8:
-            SQL_sum = """SELECT SUM(IIF( FKART NOT IN ('F2', 'L2'), FKIMG * -1, FKIMG)) as Qty
-                                FROM SAP.dbo.sapRevenue                                
-                                WHERE DATEADD(qq, DATEDIFF(qq, 0, FKDAT) , 0) = '""" + list[1] + """'"""
-        if wafer == 12:
-            SQL_sum = """SELECT SUM(Qty) as Qty
-                            FROM (
-                                SELECT SUM(IIF( FKART NOT IN ('F2', 'L2'), FKIMG * -1, FKIMG)) as Qty
-                                    FROM F12SAP.dbo.sapRevenue
-                                    WHERE DATEADD(qq, DATEDIFF(qq, 0, FKDAT) , 0) = '""" + list[1] + """'
-                                UNION
-                                SELECT SUM(IIF( FKART NOT IN ('F2', 'ZL2', 'Z001'), WQTY * -1, WQTY)) as Qty
-                                    FROM M12SAP.dbo.sapRevenue
-                                    WHERE DATEADD(qq, DATEDIFF(qq, 0, FKDAT) , 0) = '""" + list[1] + """'
-                                ) as a"""
-        
-        cursorpsmc.execute(SQL_sum)
-        val = round(cursorpsmc.fetchall()[0][0] / 1000, 0) * 1000 #fetchall = [(XXXX,)]
-    else:
-    # if list[0] != "6770":
-        if wafer == 8:
-            SQL_sum = """SELECT WaferQty_8 FROM BIDC.dbo.mopsFinancialByCompany WHERE YQ_Date = '""" + list[1] + """' AND StockID = '""" + list[0] + """'"""
-        if wafer == 12:
-            SQL_sum = """SELECT WaferQty_12 FROM BIDC.dbo.mopsFinancialByCompany WHERE YQ_Date = '""" + list[1] + """' AND StockID = '""" + list[0] + """'"""
-        
-        try:
-            cursor.execute(SQL_sum)
-            val = cursor.fetchall()[0][0]
-        except:
-            val = 0
-    return val
 
 
 
