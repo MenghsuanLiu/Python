@@ -91,9 +91,8 @@ def getWaferQty_mssql(CompID, QDate, wafersize):
 def getBSobj_genFile(StockID_List, genfile):
     head_info = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
     url= f"https://mops.twse.com.tw/server-java/t164sb01?step=1&CO_ID={StockID_List[0]}&SYEAR={StockID_List[1]}&SSEASON={StockID_List[2]}&REPORT_ID=C"
-    wpath = "html_file"
+    
     # 處理網址
-    # url = url_model.format(Category, YM)
     urlwithhead = req.get(url, headers = head_info)
     urlwithhead.encoding = "big5"
 
@@ -101,10 +100,9 @@ def getBSobj_genFile(StockID_List, genfile):
     if chk_nodata[0:5] == "檔案不存在":
         return None
 
-    if genfile == "":
-        genfile = None
     ## 寫網頁原始碼到檔案中(有值就要產生File)
     if genfile != None:
+        wpath = getConfigData(StockID_List[3], "webpath")
         # 產生出的檔案存下來
         ## 建立目錄,不存在才建...    
         if os.path.exists(wpath) == False:
@@ -118,11 +116,8 @@ def getBSobj_genFile(StockID_List, genfile):
 # 從BS物件中抓出特定的Table
 def getTBobj_genFile(bsobj, tbID, genfile, StockID_List):
     tb_data = bsobj.find_all("table")[tbID]
-
-    if genfile == "":
-        genfile = None  
     if genfile != None:
-        wpath = "html_file"
+        wpath = getConfigData(StockID_List[3],"webpath")
         fname = "tb_" + tb_data.find_all("th")[0].find("span", class_ ="en").text.strip().replace(" ","")
         with open (f"{wpath}/{fname}_{StockID_List[0]}_{StockID_List[1]}Q{StockID_List[2]}.html", mode = "w", encoding = "UTF-8") as web_html:
             web_html.write(tb_data.prettify())
@@ -146,7 +141,7 @@ def getHeaderLine(bsobj, cfg):
     # 處理三個Table的Header Text (i = 0~2)
     for i in range(3):
         GL = getConfigData(cfg, f"glst{i}")
-        tbobj = getTBobj_genFile(bsobj, i, "", [])
+        tbobj = getTBobj_genFile(bsobj, i, None, [])
         for gaccount in GL:
             val = getHeadText(tbobj, gaccount)
             data_head.append(val)     
@@ -167,27 +162,28 @@ def getQuarterFirstDate(tbobj):
     return datetime.date(int(show_date[0]), int(show_date[1]) - 2, 1)
 
 # 取得Income前三季的值加總(只有年/半年報的就只取第二季)
-def getFirst3PeriodImcome(StockID_List, file_path):
-    ID_Y_Q1ST = [StockID_List[0], StockID_List[1], 1]
+def getFirst3PeriodImcome(StockID_List):
+    ID_Y_Q1st_cfg = [StockID_List[0], StockID_List[1], "1", StockID_List[3]]
     itemlist = []
     
     # 只有第4季才需把前三季的加總
-    if StockID_List[2] == 4:
+    if StockID_List[2] == "4":
         # 先處理第一季
-        BsObj_Q1 = getBSobj_genFile(ID_Y_Q1ST, "")
+        BsObj_1st = getBSobj_genFile(ID_Y_Q1st_cfg, None)
         
         # 若沒有第一季季報,就抓半年報
-        if BsObj_Q1 == None:
-            ID_Y_Q1ST = [StockID_List[0], StockID_List[1], 2]
-            BsObj_Q1 = getBSobj_genFile(ID_Y_Q1ST, "")
+        if BsObj_1st == None:
+            # Q換Q2
+            ID_Y_Q1st_cfg[2] = "2"
+            BsObj_1st = getBSobj_genFile(ID_Y_Q1st_cfg, None)
 
         # 取得Income的會科清單
-        GL_Imcome = getConfigData(file_path, "glst1")
+        GL_Imcome = getConfigData(StockID_List[3], "glst1")
         # 從BSObject取得Income的Table
-        tbObj_Imcome_Q1 =  getTBobj_genFile(BsObj_Q1, 1, "", ID_Y_Q1ST)
+        tbObj_Imcome_1st =  getTBobj_genFile(BsObj_1st, 1, None, ID_Y_Q1st_cfg)
         try:
             for gl in GL_Imcome:
-                val = getItemVal(tbObj_Imcome_Q1, gl)
+                val = getItemVal(tbObj_Imcome_1st, gl)
                 if gl == "9750":
                     itemlist.append(float(val))
                 else:
@@ -197,12 +193,12 @@ def getFirst3PeriodImcome(StockID_List, file_path):
             return 0
 
         # 表示這個公司有季報
-        if ID_Y_Q1ST[2] == 1:
+        if ID_Y_Q1st_cfg[2] == "1":
         # 累加第二,三季
             for q in range(2,4):
-                ID_Y_Q = [StockID_List[0], StockID_List[1], q]
-                BsObj = getBSobj_genFile(ID_Y_Q, "")
-                tbObj_Imcome =  getTBobj_genFile(BsObj, 1, "", ID_Y_Q)
+                ID_Y_Q_cfg = [StockID_List[0], StockID_List[1], str(q), StockID_List[3]]
+                BsObj = getBSobj_genFile(ID_Y_Q_cfg, None)
+                tbObj_Imcome =  getTBobj_genFile(BsObj, 1, None, ID_Y_Q_cfg)
                 for gl in GL_Imcome:
                     val = getItemVal(tbObj_Imcome, gl)
                     if gl == "9750":
@@ -215,20 +211,20 @@ def getFirst3PeriodImcome(StockID_List, file_path):
         return 0
 
 # 取得現金流量表前一季的值(只有年/半年報的在Q4取Q2資料)
-def getPeriodCashFlow(StockID_List, file_path):
+def getPeriodCashFlow(StockID_List):
     itemlist = []   
     if StockID_List[2] != "1":
-        ID_Y_PQ = [StockID_List[0], StockID_List[1], StockID_List[2] - 1]
-        BsObj = getBSobj_genFile(ID_Y_PQ, "")
+        ID_Y_PQ_cfg = [StockID_List[0], StockID_List[1], str(int(StockID_List[2]) - 1), StockID_List[3]]
+        BsObj = getBSobj_genFile(ID_Y_PQ_cfg, None)
         # 有些公司只有半年報及年報
         if BsObj == None and StockID_List[2] == "2":
             return 0            
         if BsObj == None and StockID_List[2] == "4":    
-            ID_Y_PQ = [StockID_List[0], StockID_List[1], StockID_List[2] - 2]
-            BsObj = getBSobj_genFile(ID_Y_PQ, "")
+            ID_Y_PQ_cfg[2] = str(int(StockID_List[2]) - 2)
+            BsObj = getBSobj_genFile(ID_Y_PQ_cfg, None)
 
-        GL_CashFlow = getConfigData(file_path, "glst2")
-        tbObj_CashFlow_PQ =  getTBobj_genFile(BsObj, 2, "", ID_Y_PQ)
+        GL_CashFlow = getConfigData(StockID_List[3], "glst2")
+        tbObj_CashFlow_PQ =  getTBobj_genFile(BsObj, 2, None, ID_Y_PQ_cfg)
 
         try:
             for gl in GL_CashFlow:
@@ -291,7 +287,7 @@ def updateFinancial_mssql(cfgfile, DataI, YQDate):
 
 # %%    
 
-cfg_fname = "./config/config.json"
+cfg_fname = r"./config/config.json"
 
 year, quarter = getPerviousQuarter(cfg_fname)
 
@@ -316,9 +312,9 @@ AvgRate = getQuarterAVGRate_mssql(year, quarter)
 for StockID in StockList:
     itemlist = []
     # 把Stock ID / 年 / 季放到一個List中
-    ID_Y_Q = [StockID, year, quarter]
+    ID_Y_Q_cfg = [StockID, year, quarter, cfg_fname]
     # 取得BS所產生的Data
-    bsObj = getBSobj_genFile(ID_Y_Q, genFileFlag)
+    bsObj = getBSobj_genFile(ID_Y_Q_cfg, genFileFlag)
     if bsObj == None:
         print (f"{StockID} 沒有 {year} Q{quarter} 的資料!!")
         continue
@@ -327,11 +323,11 @@ for StockID in StockList:
         HeaderLine = getHeaderLine(bsObj, cfg_fname)
 
     # 取第一個table(BalanceSheet)
-    tbObj_Balance = getTBobj_genFile(bsObj, 0, genFileFlag, ID_Y_Q)
+    tbObj_Balance = getTBobj_genFile(bsObj, 0, genFileFlag, ID_Y_Q_cfg)
     # 取第二個table(Statement of Comprehensive Income)
-    tbObj_Income = getTBobj_genFile(bsObj, 1, genFileFlag, ID_Y_Q)
+    tbObj_Income = getTBobj_genFile(bsObj, 1, genFileFlag, ID_Y_Q_cfg)
     # 取第三個table(Cash Flows)
-    tbObj_CashFlows = getTBobj_genFile(bsObj, 2, genFileFlag, ID_Y_Q)
+    tbObj_CashFlows = getTBobj_genFile(bsObj, 2, genFileFlag, ID_Y_Q_cfg)
 
     # 取得item的固定值--季的第一天
     if YQFirstDate == "":
@@ -352,7 +348,7 @@ for StockID in StockList:
     # 營業收入(4000) / 營業毛利(5950) / 營業費用(6000) / 其他收益(6500) / 營業利益(6900) / 營業外收支(7000) / 母公司業主(8610) / 所得稅費用(7950)
     # 稅後淨利(8200) / 稀釋每股盈餘(9850) / 研究發展費用(6300)
     # 取得前三季的Income
-    dict_income = getFirst3PeriodImcome(ID_Y_Q, cfg_fname)
+    dict_income = getFirst3PeriodImcome(ID_Y_Q_cfg)
     for gl in GL1:
         # 判斷是否有該GL Account(有才抓值,沒有就給0)
         val = getItemVal(tbObj_Income, gl)
@@ -368,7 +364,7 @@ for StockID in StockList:
 
     # 稅前淨利(A10000) / 利息費用(A20900) / 折舊費用(A20100) / 攤銷費用(A20200)
     # 取得前季的CashFlow(第一季排除)
-    dict_cashflow = getPeriodCashFlow(ID_Y_Q, cfg_fname)
+    dict_cashflow = getPeriodCashFlow(ID_Y_Q_cfg)
     for gl in GL2:
         # 判斷是否有該GL Account(有才抓值,沒有就給0)
         val = getItemVal(tbObj_CashFlows, gl)
@@ -389,3 +385,5 @@ YearQuarter = [year, quarter]
 writeExcel(cfg_fname, HeaderLine, ItemData, YearQuarter)
 updateFinancial_mssql(cfg_fname, ItemData, YQFirstDate)
 
+
+# %%
