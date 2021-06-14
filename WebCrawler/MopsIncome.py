@@ -54,9 +54,8 @@ def get_Header(TBobj):
 #     df_comp = pd.read_sql(sqlselect, SQLconn)
 #     return df_comp
 
-def check_CompExist(comp_df, chk_stockid, updb):
-    status = shownname = ""
-    if updb != "":
+def checkCompExist(comp_df, chk_stockid):
+    if comp_df != None:
         df_list = comp_df.loc[comp_df["StockID"] == chk_stockid[0]]
         if df_list.empty == True:
             status =  "append"
@@ -192,7 +191,8 @@ def updateRevenue_mssql(db, DataI, ymlist):
                     logger.exception("message")
                     return
  
-def updateCompList_mssql(db, Cdata):
+# 更新DB中Company List的Data     
+def updateCompList_mssql(Cdata, cfg):
     pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
     pwd = dectry(pwd_enc)
     if db != "" and Cdata != []:
