@@ -60,7 +60,6 @@ def getTBobj_genFile(bsobj, Catg_YM_cfg, ind):
             web_html.write(tb.prettify())
     return tb    
 
-
 # 取得民國年月...從今天開始算,出來就是List
 def getChineseMonthFromToday(num):
     num = num * -1
@@ -252,6 +251,7 @@ def updateCompList_mssql(DataI, cfg):
             CData.append([l[1], l[2], l[12], l[13]])
         # 取得公司的清單(先前已存在資料庫中)
         df_Complist = getComplist_mssql()
+        # ************************************這段要再測過****
         if CData not in up_CData:
             chk, shown = checkCompExist(df_Complist, CData)
             if chk == "append":
