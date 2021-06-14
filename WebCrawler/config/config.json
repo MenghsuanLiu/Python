@@ -1,6 +1,7 @@
 {
     "manual_year": "",
     "manual_quarter": "",
+    "manual_yearmon": [],
     "stocktype":["sii",	"otc", "rotc",	"pub"],
     "industygroup":["半導體", "電子工業"],
     "stocklist": ["2330", "2303", "2408", "2344", "2337", "5347", "6770"],
