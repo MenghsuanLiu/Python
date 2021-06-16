@@ -40,12 +40,11 @@ def getPerviousQuarter(cfgfile):
 # 取得季的平均Rate
 def getQuarterAVGRate_mssql(Fyear, Fquarter):
     pwd_enc = "215_203_225_72_88_148_169_83_98_"
-    pwd = dectry(pwd_enc)
     # 季轉月區間
     max_mon = int(Fquarter) * 3
     min_mon = max_mon - 2
     try:
-        with pymssql.connect( server = "8AEISS01", user = "sap_user", password = pwd, database = "BIDC" ) as conn:
+        with pymssql.connect( server = "8AEISS01", user = "sap_user", password = dectry(pwd_enc), database = "BIDC" ) as conn:
             with conn.cursor() as cursor:
                 try:
                     cursor.execute(f"SELECT UKURS FROM SAP.dbo.sapExchangeRateByMonth WHERE GJAHR = {Fyear} AND MONAT >= {min_mon} AND MONAT <= {max_mon}")
@@ -63,8 +62,7 @@ def getWaferQty_mssql(CompID, QDate, wafersize):
     try:
         if CompID == "6770":
             pwd_enc = "215_203_225_72_88_148_169_83_98_"
-            pwd = dectry(pwd_enc)
-            with pymssql.connect( server = "8AEISS01", user = "sap_user", password = pwd ) as conn:
+            with pymssql.connect( server = "8AEISS01", user = "sap_user", password = dectry(pwd_enc) ) as conn:
                 with conn.cursor() as cursor:
                     try:
                         if wafersize == 8:
@@ -262,11 +260,10 @@ def writeExcel(cfgfile, DataH, DataI, yq):
 def updateFinancial_mssql(cfgfile, DataI, YQDate):
     upDB = getConfigData(cfgfile, "update_db")
     pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
-    pwd = dectry(pwd_enc)
 
     if upDB != None and DataI != []:
         # 連結資料庫
-        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = pwd, database = "BIDC" ) as conn:
+        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = dectry(pwd_enc), database = "BIDC" ) as conn:
             with conn.cursor() as cursor:
                 # 先刪資料
                 try:      
@@ -384,6 +381,3 @@ for StockID in StockList:
 YearQuarter = [year, quarter]
 writeExcel(cfg_fname, HeaderLine, ItemData, YearQuarter)
 updateFinancial_mssql(cfg_fname, ItemData, YQFirstDate)
-
-
-# %%

@@ -1,7 +1,6 @@
 # %%
 import os
 import re
-from bs4.element import CData
 import requests as req
 import pandas as pd
 import numpy as np
@@ -94,6 +93,7 @@ def getCategoryChinseseDesc(cfg):
         market_list.append(getMarketNameFromBSObj(BS_Obj) + "公司")
     return dict(zip(catglist, market_list))
 
+# 由民國轉西元
 def ChineseYearMonToCE(ymval):
     yyymm = ymval.split("_")
     return str(int(yyymm[0]) + 1911) + "-" + str(yyymm[1]) + "-1"
@@ -118,20 +118,22 @@ def getHeaderLine(cfg):
             headtext.append(head_list)
     return headtext
 
-
+# 檢查DB中是否該company存在
 def checkCompExist(comp_df, chk_stockid):
-    if comp_df != None:
-        df_list = comp_df.loc[comp_df["StockID"] == chk_stockid[0]]
-        if df_list.empty == True:
-            status =  "append"
-        elif df_list["StockName"].values != chk_stockid[1] or df_list["Market"].values != chk_stockid[2] or df_list["Industry"].values != chk_stockid[3]:
-            # 做modify時要保留showname
-            status =  "modify"
-            shownname = df_list["EnShowName"].values[0]
-    else:
-        status =  "append"
-        shownname = None   
-    return status, shownname
+    # 資料庫沒有值,就是要新增
+    if comp_df.empty == True:
+        return "A", ""
+    # 抓出DataFrame同StockID
+    df_row = comp_df.loc[comp_df["StockID"] == chk_stockid[0]]
+    # 抓出空值,就要新增
+    if df_row.empty == True:
+        return "A", ""
+    # 只要有一個值不同就要更新
+    if df_row["StockName"].values != chk_stockid[1] or df_row["Market"].values != chk_stockid[2] or df_row["Industry"].values != chk_stockid[3]:
+        return "M", df_row["EnShowName"].values[0]
+    
+    # 以上都不符合(沒有變更)..傳出去就都是空值
+    return None, None
 
 # 針對PSMC要計算L及M的當月revenue(計算LSPF的,Memory用扣的)
 def splitPSMCRevenueByBU(list):
@@ -167,7 +169,7 @@ def splitPSMCRevenueByBU(list):
         return 0
 
 # 取得欄位中的值
-def get_tbColval(rowlist, colid):
+def getTBColval(rowlist, colid):
     val = ""
     td_id = "td:nth-child(" + str(colid) + ")"
     for col in rowlist.select(td_id):
@@ -182,30 +184,28 @@ def getMarketNameFromBSObj(bsobj):
     market = bsobj.find("b")
     return market.text.split("公司")[0]
 
-# 從DB的Company List取得現有的資料      
+# 從DB的Company List取得現有的資料(出來是DataFrame)  
 def getComplist_mssql():
     df_list = []
     pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
-    pwd = dectry(pwd_enc)
     try:
-        head = ["StockID", "StockName", "Market", "Industry", "EnShowName"]
-        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = pwd, database = "BIDC" ) as conn:
+        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = dectry(pwd_enc), database = "BIDC" ) as conn:
             with conn.cursor() as cursor:
                 try:
                     cursor.execute("SELECT StockID, StockName, Market, Industry, EnShowName FROM BIDC.dbo.mopsStockCompanyInfo")
+                    headerline =  [item[0] for item in cursor.description]
                     quary = cursor.fetchall()
-                    df_list = pd.DataFrame(quary, columns = head)
+                    df_list = pd.DataFrame(quary, columns = headerline)
                     return df_list
                 except:
                     logger.exception("message")
-                    return
+                    return pd.DataFrame([])
     except:
-        return None
+        return pd.DataFrame([])
 
 # 更新DB中Revenue的Data    
 def updateRevenue_mssql(DataI, ymclist, cfg):
     pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
-    pwd = dectry(pwd_enc)
     up_db = getConfigData(cfg, "update_db")
     if up_db != None and DataI != []:
         # 先把進來的民國年月List轉換成DB用的西元年用
@@ -219,7 +219,7 @@ def updateRevenue_mssql(DataI, ymclist, cfg):
         ary_data = np.array(DataI)
         item_tuple = list(map(tuple, ary_data[:,[0, 14, 1, 15, 11]]))
         # 連結資料庫
-        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = pwd, database = "BIDC" ) as conn:
+        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = dectry(pwd_enc), database = "BIDC" ) as conn:
             with conn.cursor() as cursor:
                 # 先刪資料
                 try:      
@@ -241,58 +241,61 @@ def updateRevenue_mssql(DataI, ymclist, cfg):
 # 更新DB中Company List的Data     
 def updateCompList_mssql(DataI, cfg):
     pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
-    pwd = dectry(pwd_enc)
     up_db = getConfigData(cfg, "update_db")
     if up_db != None:
         CData = []
         up_CData = []
+        ids = []
         # 取得這次抓網站的資料List
         for l in DataI:
             CData.append([l[1], l[2], l[12], l[13]])
+
         # 取得公司的清單(先前已存在資料庫中)
         df_Complist = getComplist_mssql()
-        # ************************************這段要再測過****
-        if CData not in up_CData:
-            chk, shown = checkCompExist(df_Complist, CData)
-            if chk == "append":
-                CData.append("")
-                up_CData.append(CData)    
-            if chk == "modify":
-                CData.append(shown)
-                data_company.append(CData)
+        for c in CData:
+            chk, shown = checkCompExist(df_Complist, c)
+            # 要檢查StockID是否重覆(ItemData對PSMC有拆)
+            if chk != None and [c[0]] not in ids:
+                up_CData.append([c[0], c[1], c[2], c[3], shown])
+                ids.append([c[0]])
+        if up_CData != []:
+            sid_tuple = list(map(tuple, np.array(ids)))
+            comp_tuple = list(map(tuple, np.array(up_CData)))
+            # 連結資料庫
+            with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = dectry(pwd_enc), database = "BIDC" ) as conn:
+                with conn.cursor() as cursor:
+                    # 先刪資料
+                    try:      
+                        cursor.executemany("DELETE FROM BIDC.dbo.mopsStockCompanyInfo WHERE StockID = %s", sid_tuple)
+                        conn.commit()
+                        logger.info("mopsStockCompanyInfo Delete Complete")
+                    except:
+                        logger.exception("message")
+                        return
 
-        ary_data = np.array(data_company)
-        sid_tuple = list(map(tuple, ary_data[:,0]))
-        comp_tuple = list(map(tuple, ary_data))
-        # 連結資料庫
-        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = pwd, database = "BIDC" ) as conn:
-            with conn.cursor() as cursor:
-                # 先刪資料
-                try:      
-                    cursor.executemany("DELETE FROM BIDC.dbo.mopsStockCompanyInfo WHERE StockID = %s", sid_tuple)
-                    conn.commit()
-                    logger.info("mopsStockCompanyInfo Delete Complete")
-                except:
-                    logger.exception("message")
-                    return
-
-                # 寫入資料
-                try:
-                    cursor.executemany("INSERT INTO BIDC.dbo.mopsStockCompanyInfo (StockID, StockName, Market, Industry, EnShowName) VALUES (%s, %s, %s, %s, %s)", comp_tuple) 
-                    conn.commit()
-                    logger.info("mopsStockCompanyInfo Insert Complete")
-                except:
-                    logger.exception("message")
-                    return
+                    # 寫入資料
+                    try:
+                        cursor.executemany("INSERT INTO BIDC.dbo.mopsStockCompanyInfo (StockID, StockName, Market, Industry, EnShowName) VALUES (%s, %s, %s, %s, %s)", comp_tuple) 
+                        conn.commit()
+                        logger.info("mopsStockCompanyInfo Insert Complete")
+                    except:
+                        logger.exception("message")
+                        return
+        return
     else:
         logger.info("Config Without Update mopsStockCompanyInfo!!")
         return
         
 # 寫資料到Excel
-def writeExcel(DataH, DataI, cfgfile):
+def writeExcel(DataH, DataI, ymlist, cfgfile):
     # 判斷是否需要產生Excel File
     genxls = getConfigData(cfgfile, "update_xls")
     if genxls != None:
+        if len(ymlist) > 1:
+            ymlist = sorted(ymlist)
+            fname_ym = f"{ymlist[0]}-{ymlist[-1]}"
+        else:
+            fname_ym = ymlist[0]  
         if DataH != [] and DataI !=[]:
             # 存成檔案時的目錄
             file_path = getConfigData(cfgfile, "filepath")
@@ -306,17 +309,18 @@ def writeExcel(DataH, DataI, cfgfile):
             df_imcome = pd.DataFrame(DataI, columns = DataH)
             ## 寫到Excel
             try:
-                df_imcome.to_excel(rf"{file_path}/Revenue.xlsx", index = False)
-                logger.info(f"Create {file_path}/Revenue.xlsx Success!!")
-                return print(f"Create Revenue.xlsx Success!!")
+                df_imcome.to_excel(rf"{file_path}/Revenue_{fname_ym}.xlsx", index = False)
+                logger.info(f"Create {file_path}/Revenue_{fname_ym}.xlsx Success!!")
+                # return print(f"Create Revenue.xlsx Success!!")
             except:
                 logger.exception("message")
-                return print(f"Create Revenue.xlsx Fail!!")
+                # return print(f"Create Revenue.xlsx Fail!!")
         else:
             logger.info("No Data to Create Excel File!")
-            return print("Did not Collect Data!!")
+            # return print("Did not Collect Data!!")        
     else:
         logger.info("Config Without Create Excel File!!")
+    return
 
 
 
@@ -325,101 +329,92 @@ logger = create_logger("./log")
 logger.info("Start")
 
 cfg_fname = "./config/config.json"
-# cfg_fname = "D:\GitHub\Python\WebCrawler\config\config.json"
-
+# cfg_fname = "D:\My Document\Python\webcrawler\config\config.json"
 # 取得 sii / otc...的中文
 dict_catg = getCategoryChinseseDesc(cfg_fname)
-
 # 取得市場類別的清單
 stockcatg = getConfigData(cfg_fname, "stocktype") # stockcatg = ["sii", "otc", "rotc", "pub"]
-
 # 取得需要抓取的年月清單
 ym_clist = getChineseYearMonthList(cfg_fname)
-
 # 取得產業別的清單
 industy = getConfigData(cfg_fname, "industygroup") # industy = ["半導體", "電子工業"]
-
-
-
-
 # 取表頭資料
 HeaderLine = getHeaderLine(cfg_fname)
-
 ItemData = []
 key_list = []
 
 for catg in stockcatg:
     for period in ym_clist:
         data_lst = [catg, period, cfg_fname]
-
         # 取得BeautifulSoup Data
         BS_Obj = getBSobj_genFile(data_lst)
-
         # 取得市場的名稱
-        market = getMarketNameFromBSObj(BS_Obj)        
-
+        market = getMarketNameFromBSObj(BS_Obj)
         #轉西元年
         yyyymm = ChineseYearMonToCE(period)
         # 取table
         for ind in industy:
             TB_Obj = getTBobj_genFile(BS_Obj, data_lst, ind)
-
             # 有些產業在這個類別沒有
             if TB_Obj == None:
                 continue
-
             logger.info(f"{period} {dict_catg[catg]} {ind} Start")
-
             # Get Item =>從第3個Row開始loop起(Row 3 以後是資料)
             for rows in TB_Obj.select("table > tr")[2:]:
-                StockID = get_tbColval(rows, 1)
-                StockName = get_tbColval(rows, 2)
-                CurrRevenue = get_tbColval(rows, 3)
-                LastRevenue = get_tbColval(rows, 4)
-                YoYRevenue = get_tbColval(rows, 5)
-                LastPercent = get_tbColval(rows, 6)
-                if LastPercent == "":
-                    LastPercent = 0
-                YoYPercent = get_tbColval(rows, 7)
-                if YoYPercent == "":
-                    YoYPercent = 0
-                CurrCount = get_tbColval(rows, 8)
-                LastCount = get_tbColval(rows, 9)
-                DiffPercent = get_tbColval(rows, 10)
-                if DiffPercent == "":
-                    DiffPercent = 0
-                Remark = get_tbColval(rows, 11)
-                # 收集資料放到data_item,同時若遇到PSMC就要去拆BU計算
-                if StockID != "":
+                # 股票代碼(空值換下一筆)
+                StockID = getTBColval(rows, 1) if getTBColval(rows, 1) != "" else None 
+                if StockID == None:
+                    continue
+                else:
                     key = [yyyymm, StockID]
-                    if key not in key_list:
-                        collect = [yyyymm, StockID, StockName, int(CurrRevenue), int(LastRevenue), int(YoYRevenue), float(LastPercent), float(YoYPercent), int(CurrCount), int(LastCount), float(DiffPercent), Remark, market, ind]                        
-                        # 遇到PSMC要拆BU
-                        psmc_lspf_val = splitPSMCRevenueByBU(collect)
-                        if psmc_lspf_val == 0:
-                            collect.append("")
-                            collect.append(int(CurrRevenue) * 1000)
-                        else:
-                            collect_tmp = collect.copy()
-                            psmc_m_val = collect[3] - psmc_lspf_val
-                            collect_tmp[3] = psmc_lspf_val
-                            collect_tmp.append("L")
-                            collect_tmp.append(int(psmc_lspf_val) * 1000)
-                            ItemData.append(collect_tmp)
-                            collect[3]  = psmc_m_val
-                            collect.append("M")
-                            collect.append(int(psmc_m_val) * 1000)
-                        ItemData.append(collect)
-                        key_list.append(key)
+                # 檢查key值是否曾經出現過(沒有就加入清單中)
+                if key in key_list:
+                    continue
+                else:
+                    key_list.append(key)
+                # 組出需要的List
+                itemlist = []
+                # [YearMonth, StockID]
+                for l in [yyyymm, StockID]:
+                    itemlist.append(l)
+                
+                for i in range(2,12):
+                    # [StockName, Remark]
+                    if i in [2, 11]:
+                        itemlist.append(getTBColval(rows, i))
+                    # [CurrRevenue, CurrRevenue, LastRevenue, CurrCount, LastCount]    
+                    if i in [3, 4, 5, 8, 9]:
+                        itemlist.append(int(getTBColval(rows, i) if getTBColval(rows, i) != "" else 0))
+                    # [LastPercent, YoYPercent, DiffPercent]
+                    if i in [6, 7, 10]:
+                        itemlist.append(float(getTBColval(rows, i) if getTBColval(rows, i) != "" else 0))
+                # [市場, 產業]
+                for l in [market, ind]:
+                    itemlist.append(l)
+                
+                # 遇到PSMC要拆BU
+                PSMC_Revenue_L = splitPSMCRevenueByBU(itemlist)                
+                if PSMC_Revenue_L == 0:
+                    itemlist.append("")
+                    itemlist.append(int(getTBColval(rows, 3) if getTBColval(rows, 3) != "" else 0))
+                else:
+                    itemlist_tmp = itemlist.copy()
+                    itemlist_tmp[3] = PSMC_Revenue_L
+                    itemlist_tmp.append("L")
+                    itemlist_tmp.append(int(PSMC_Revenue_L) * 1000)
+                    ItemData.append(itemlist_tmp)
+
+                    itemlist[3] = itemlist[3] - PSMC_Revenue_L
+                    itemlist.append("M")
+                    itemlist.append(itemlist[3] * 1000)
+                ItemData.append(itemlist)
 # %%
 # 營收資料寫入資料庫中
 updateRevenue_mssql(ItemData, ym_clist, cfg_fname)
-
 # 公司清單寫入資料庫中
 updateCompList_mssql(ItemData, cfg_fname)
-
 # 產生Excel File
-writeExcel(HeaderLine, ItemData, cfg_fname)
+writeExcel(HeaderLine, ItemData, ym_clist, cfg_fname)
 logger.info("Export Done!")
 
 # %%
