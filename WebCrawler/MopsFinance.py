@@ -241,47 +241,115 @@ def writeExcel(cfgfile, DataH, DataI, yq):
     file_path = getConfigData(cfgfile, "filepath")
     fname = f"Financial_{yq[0]}_Q{yq[1]}.xlsx"
 
-    if genxls != None:
-        # 建立目錄,不存在才建...
-        if os.path.exists(file_path) == False:
-            os.makedirs(file_path)
-        
-        # 轉換成DataFrame
-        df_data = pd.DataFrame(DataI, columns = DataH)
-        try:
-            df_data.to_excel(f"{file_path}/{fname}", index = False)
-            return print(f"Create {fname} Success!!")
-        except:
-            return print(f"Create {fname} Fail!!")
-    else:
+    if genxls == None:
         return print(f"Config Without Create Excel File!!")
+    
+    # 建立目錄,不存在才建...
+    if os.path.exists(file_path) == False:
+        os.makedirs(file_path)
+
+    # 轉換成DataFrame
+    df_data = pd.DataFrame(DataI, columns = DataH)
+    try:
+        df_data.to_excel(f"{file_path}/{fname}", index = False)
+        return print(f"Create {fname} Success!!")
+    except:
+        return print(f"Create {fname} Fail!!")
 
 # 寫資料到資料庫
 def updateFinancial_mssql(cfgfile, DataI, YQDate):
     upDB = getConfigData(cfgfile, "update_db")
     pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
 
-    if upDB != None and DataI != []:
-        # 連結資料庫
-        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = dectry(pwd_enc), database = "BIDC" ) as conn:
-            with conn.cursor() as cursor:
-                # 先刪資料
-                try:      
-                    cursor.executemany(f"DELETE FROM BIDC.dbo.mopsFinancialByCompany WHERE YQ_Date ='{YQDate}'")
-                    conn.commit()
-                except:
-                    return print(f"Delete mopsFinancialByCompany {YQDate} Fail!!")
-                # 寫入資料
-                ary_data = np.array(DataI)
-                item_tuple = list(map(tuple, ary_data))
-                try:
-                    # 公司, 日期, PSMC平均匯率, 8"數量, 12"數量, 總資產, 總負債, 流通在外張數, 營業收入, 營業毛利, 營業費用, 營業費用(其他), 營業利益, 營業外收支, 稅後純益(損), 所得稅費用, 稅後淨利, EPS, RD費用, 稅前淨利, 利息費用, 折舊費用, 攤銷費用
-                    cursor.executemany("INSERT INTO BIDC.dbo.mopsFinancialByCompany (StockID, YQ_Date, PSMC_ExRate, WaferQty_8, WaferQty_12, Assets, Liabilities, OrdinaryShare, Oper_Revenue, GP_Oper, Oper_Expenses, NetOtherIncome, NetOperIncome, nonOperIncome, PF_AttrOwners, Tax_Expense, Profit, EPS, RD_Expense, PF_BeforeTax,  Inter_Expense, DP_Expense, Amor_Expense) VALUES (%s, %s, %f, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %f, %d, %d, %d, %d, %d)", item_tuple)
-                    conn.commit()
-                except:
-                    return print(f"Update mopsFinancialByCompany {YQDate} Fail!!")
+    if upDB == None:
+        return print("Can't Update DB(BIDC.dbo.mopsFinancialByCompany) By config!")
+    if DataI == []:
+        return print("Item No Data For DB(BIDC.dbo.mopsFinancialByCompany)")    
+    
+    # 連結資料庫
+    with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = dectry(pwd_enc), database = "BIDC" ) as conn:
+        with conn.cursor() as cursor:
+            # 先刪資料
+            try:      
+                cursor.execute(f"DELETE FROM BIDC.dbo.mopsFinancialByCompany WHERE YQ_Date ='{YQDate}'")
+                conn.commit()
+            except:
+                return print(f"Delete mopsFinancialByCompany {YQDate} Fail!!")
+            # 寫入資料
+            ary_data = np.array(DataI)
+            item_tuple = list(map(tuple, ary_data))
+            try:
+                # 公司, 日期, PSMC平均匯率, 8"數量, 12"數量, 總資產, 總負債, 流通在外張數, 營業收入, 營業毛利, 營業費用, 營業費用(其他), 營業利益, 營業外收支, 稅後純益(損), 所得稅費用, 稅後淨利, EPS, RD費用, 稅前淨利, 利息費用, 折舊費用, 攤銷費用
+                cursor.executemany("INSERT INTO BIDC.dbo.mopsFinancialByCompany (StockID, YQ_Date, PSMC_ExRate, WaferQty_8, WaferQty_12, Assets, Liabilities, OrdinaryShare, Oper_Revenue, GP_Oper, Oper_Expenses, NetOtherIncome, NetOperIncome, nonOperIncome, PF_AttrOwners, Tax_Expense, Profit, EPS, RD_Expense, PF_BeforeTax,  Inter_Expense, DP_Expense, Amor_Expense) VALUES (%s, %s, %f, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %f, %d, %d, %d, %d, %d)", item_tuple)
+                conn.commit()
+            except:
+                return print(f"Update BIDC.dbo.mopsFinancialByCompany {YQDate} Fail!!")
 
+def updateWaferQtyRevenuebyPortfolio_mssql(cfg, yqdate):    
+    up_db = getConfigData(cfg, "update_db")
+    
+    if up_db == None:
+        return print("Can't Update DB(SAP.dbo.sapRevenueQtyByPortfolio) By config!")
+    pwd_enc = "215_203_225_72_88_148_169_83_98_"
+    with pymssql.connect( server = "8AEISS01", user = "sap_user", password = dectry(pwd_enc) ) as conn:
+        with conn.cursor() as cursor:
+            try:
+                cursor.execute(f"""SELECT   convert(varchar, DATEADD(qq, DATEDIFF(qq, 0, FKDAT), 0), 23) as YQ_Date,
+                                            PC as Portfolio,
+                                            round(SUM(IIF(FKART IN ('F2', 'L2'), LNETW, LNETW * -1)), -3) as Revenue,
+                                            round(SUM(IIF(FKART IN ('F2', 'L2'), FKIMG, FKIMG * -1)), -3) as Qty,
+                                            '8' as WaferSize,
+                                            'L' as BU
+                                        FROM BIDC.dbo.sapVwRevenue
+                                        WHERE convert(varchar, DATEADD(qq, DATEDIFF(qq, 0, FKDAT), 0), 23) = convert(varchar, CONVERT(datetime,  '{yqdate}'), 23)
+                                        GROUP BY  DATEADD(qq, DATEDIFF(qq, 0, FKDAT), 0), PC
+                                    UNION
+                                    SELECT  convert(varchar, DATEADD(qq, DATEDIFF(qq, 0, FKDAT), 0), 23) as YQ_Date,
+                                            PC as Portfolio,
+                                            round(SUM(IIF(FKART IN ('F2', 'L2'), LNETW, LNETW * -1)), -3) as Revenue,
+                                            round(SUM(IIF(FKART IN ('F2', 'L2'), FKIMG, FKIMG * -1)), -3) as Qty,
+                                            '12' as WaferSize,
+                                            'L' as BU
+                                        FROM F12BIDC.dbo.sapVwRevenue
+                                        WHERE convert(varchar, DATEADD(qq, DATEDIFF(qq, 0, FKDAT), 0), 23) = convert(varchar, CONVERT(datetime,  '{yqdate}'), 23)
+                                        GROUP BY  DATEADD(qq, DATEDIFF(qq, 0, FKDAT), 0), PC""")
+                                    # 12M的部份手動給
+                                    # UNION
+                                    # SELECT  convert(varchar, DATEADD(qq, DATEDIFF(qq, 0, FKDAT), 0), 23) as YQ_Date,
+                                    #         '' as Portfolio,
+                                    #         round(SUM(IIF(FKART IN ('F2', 'ZL2', 'Z001'), LNETW, LNETW * -1)), -3) as Revenue,
+                                    #         round(SUM(IIF(FKART IN ('F2', 'ZL2', 'Z001'), WQTY, WQTY * -1)), -3) as Qty,
+                                    #         '12' as WaferSize,
+                                    #         'M' as BU
+                                    #     FROM M12SAP.dbo.sapRevenue
+                                    #     WHERE convert(varchar, DATEADD(qq, DATEDIFF(qq, 0, FKDAT), 0), 23) = convert(varchar, CONVERT(datetime,  '{yqdate}'), 23)
+                                    #     GROUP BY  DATEADD(qq, DATEDIFF(qq, 0, FKDAT), 0)""")
+                itemdata = cursor.fetchall()
+                headerline =  [item[0] for item in cursor.description]
+                df_list = pd.DataFrame(itemdata, columns = headerline)
+            except:
+                return print("Get revenue & Qty From Table is Fail!!")
+    if df_list.empty:
+        return print("DataFrame is Empty!!")
 
+    pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
+    data_tuple = list(df_list.itertuples(index = False))
+    with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = dectry(pwd_enc), database = "SAP" ) as conn:
+        with conn.cursor() as cursor:
+            # 先刪資料
+            try:      
+                cursor.execute(f"DELETE FROM SAP.dbo.sapRevenueQtyByPortfolio WHERE YQ_Date = '{yqdate}' AND BU = 'L'")
+                conn.commit()
+            except:
+                return print(f"Delete sapRevenueQtyByPortfolio {yqdate} Fail!!")
+
+            # 寫入資料
+            try:
+                cursor.executemany("INSERT INTO SAP.dbo.sapRevenueQtyByPortfolio (YQ_Date, Portfolio, Revenue, Qty, WaferSize, BU) VALUES (%s, %s, %d, %d, %s, %s)", data_tuple) 
+                conn.commit()
+                return print(f"sapRevenueQtyByPortfolio Insert Complete ({yqdate})")
+            except:
+                return print(f"Insert sapRevenueQtyByPortfolio {yqdate} Fail!!")
 # %%    
 
 cfg_fname = r"./config/config.json"
@@ -381,3 +449,5 @@ for StockID in StockList:
 YearQuarter = [year, quarter]
 writeExcel(cfg_fname, HeaderLine, ItemData, YearQuarter)
 updateFinancial_mssql(cfg_fname, ItemData, YQFirstDate)
+# 處理Qty Revenue 寫到table中
+updateWaferQtyRevenuebyPortfolio_mssql(cfg_fname, YQFirstDate)

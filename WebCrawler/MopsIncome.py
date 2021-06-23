@@ -242,49 +242,50 @@ def updateRevenue_mssql(DataI, ymclist, cfg):
 def updateCompList_mssql(DataI, cfg):
     pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
     up_db = getConfigData(cfg, "update_db")
-    if up_db != None:
-        CData = []
-        up_CData = []
-        ids = []
-        # 取得這次抓網站的資料List
-        for l in DataI:
-            CData.append([l[1], l[2], l[12], l[13]])
-
-        # 取得公司的清單(先前已存在資料庫中)
-        df_Complist = getComplist_mssql()
-        for c in CData:
-            chk, shown = checkCompExist(df_Complist, c)
-            # 要檢查StockID是否重覆(ItemData對PSMC有拆)
-            if chk != None and [c[0]] not in ids:
-                up_CData.append([c[0], c[1], c[2], c[3], shown])
-                ids.append([c[0]])
-        if up_CData != []:
-            sid_tuple = list(map(tuple, np.array(ids)))
-            comp_tuple = list(map(tuple, np.array(up_CData)))
-            # 連結資料庫
-            with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = dectry(pwd_enc), database = "BIDC" ) as conn:
-                with conn.cursor() as cursor:
-                    # 先刪資料
-                    try:      
-                        cursor.executemany("DELETE FROM BIDC.dbo.mopsStockCompanyInfo WHERE StockID = %s", sid_tuple)
-                        conn.commit()
-                        logger.info("mopsStockCompanyInfo Delete Complete")
-                    except:
-                        logger.exception("message")
-                        return
-
-                    # 寫入資料
-                    try:
-                        cursor.executemany("INSERT INTO BIDC.dbo.mopsStockCompanyInfo (StockID, StockName, Market, Industry, EnShowName) VALUES (%s, %s, %s, %s, %s)", comp_tuple) 
-                        conn.commit()
-                        logger.info("mopsStockCompanyInfo Insert Complete")
-                    except:
-                        logger.exception("message")
-                        return
-        return
-    else:
+    if up_db == None:
         logger.info("Config Without Update mopsStockCompanyInfo!!")
         return
+
+    CData = []
+    up_CData = []
+    ids = []
+    # 取得這次抓網站的資料List
+    for l in DataI:
+        CData.append([l[1], l[2], l[12], l[13]])
+
+    # 取得公司的清單(先前已存在資料庫中)
+    df_Complist = getComplist_mssql()
+    for c in CData:
+        chk, shown = checkCompExist(df_Complist, c)
+        # 要檢查StockID是否重覆(ItemData對PSMC有拆)
+        if chk != None and [c[0]] not in ids:
+            up_CData.append([c[0], c[1], c[2], c[3], shown])
+            ids.append([c[0]])
+    if up_CData != []:
+        sid_tuple = list(map(tuple, np.array(ids)))
+        comp_tuple = list(map(tuple, np.array(up_CData)))
+        # 連結資料庫
+        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = dectry(pwd_enc), database = "BIDC" ) as conn:
+            with conn.cursor() as cursor:
+                # 先刪資料
+                try:      
+                    cursor.executemany("DELETE FROM BIDC.dbo.mopsStockCompanyInfo WHERE StockID = %s", sid_tuple)
+                    conn.commit()
+                    logger.info("mopsStockCompanyInfo Delete Complete")
+                except:
+                    logger.exception("message")
+                    return
+
+                # 寫入資料
+                try:
+                    cursor.executemany("INSERT INTO BIDC.dbo.mopsStockCompanyInfo (StockID, StockName, Market, Industry, EnShowName) VALUES (%s, %s, %s, %s, %s)", comp_tuple) 
+                    conn.commit()
+                    logger.info("mopsStockCompanyInfo Insert Complete")
+                except:
+                    logger.exception("message")
+                    return
+    return
+        
         
 # 寫資料到Excel
 def writeExcel(DataH, DataI, ymlist, cfgfile):
@@ -396,7 +397,7 @@ for catg in stockcatg:
                 PSMC_Revenue_L = splitPSMCRevenueByBU(itemlist)                
                 if PSMC_Revenue_L == 0:
                     itemlist.append("")
-                    itemlist.append(int(getTBColval(rows, 3) if getTBColval(rows, 3) != "" else 0))
+                    itemlist.append(int(getTBColval(rows, 3) if getTBColval(rows, 3) != "" else 0) * 1000)
                 else:
                     itemlist_tmp = itemlist.copy()
                     itemlist_tmp[3] = PSMC_Revenue_L
@@ -413,6 +414,7 @@ for catg in stockcatg:
 updateRevenue_mssql(ItemData, ym_clist, cfg_fname)
 # 公司清單寫入資料庫中
 updateCompList_mssql(ItemData, cfg_fname)
+
 # 產生Excel File
 writeExcel(HeaderLine, ItemData, ym_clist, cfg_fname)
 logger.info("Export Done!")
