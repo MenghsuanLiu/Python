@@ -4,8 +4,7 @@ import requests as req
 from bs4 import BeautifulSoup as bs
 import pandas as pd
 import numpy as np
-import datetime
-from datequarter import DateQuarter
+from datetime import date as dt
 import pymssql
 import time
 import json
@@ -21,21 +20,40 @@ def getConfigData(file_path, datatype):
         return None
 
 # 取得前一個年季, Base on Today or config File
-def getPerviousQuarter(cfgfile):
+def getYearQuarterVal(cfgfile, dateval, num):
     y = getConfigData(cfgfile, "manual_year")
     q = getConfigData(cfgfile, "manual_quarter")
+    
+    if y != None and q != None:
+        return str(y), str(q)
+    
+    if not isinstance(dateval, dt):
+        try:
+            dateval = dateval.replace("-","").replace("/","")
+            dateval = dt(int(str(dateval)[0:4]), int(str(dateval)[4:6]), int(str(dateval)[6:8]))
+        except:
+            return None, None
 
-    PreviousQuarter = DateQuarter.from_date(datetime.date.today()) - 1
-    if y == None:
-        y = str(PreviousQuarter._year)
-    else:
-        y = str(y)
+    q = ((dateval.month - 1) // 3 + 1) + int(num)
+    y = dateval.year
 
-    if q == None:    
-        q = str(PreviousQuarter._quarter)
+    if q == 0:
+        return str(y - 1), str(abs(q - 4))
+
+    if q < 0:    
+        while True:
+            if (q + 4)  in range(1, 5):
+                return str(y - 1), str(q + 4)
+            else:
+                y -= 1
+                q += 4
     else:
-        q = str(q)
-    return y, q
+        while True:
+            if q in range(1, 5):
+                return str(y), str(q)
+            else:
+                y += 1
+                q -= 4
 
 # 取得季的平均Rate
 def getQuarterAVGRate_mssql(Fyear, Fquarter):
@@ -154,10 +172,10 @@ def getItemVal(tbobj, GLAccount):
     return val
 
 # 取得該季的第一天
-def getQuarterFirstDate(tbobj):
+def getQuarterFirstDateByTBObj(tbobj):
     show_date = tbobj.find_all("th")[3].find("span", class_ = "en").text.split("/")
     # 因為上面的月只會show 3, 6, 9, 12所以不用擔心跨年的問題
-    return datetime.date(int(show_date[0]), int(show_date[1]) - 2, 1)
+    return dt(int(show_date[0]), int(show_date[1]) - 2, 1)
 
 # 取得Income前三季的值加總(只有年/半年報的就只取第二季)
 def getFirst3PeriodImcome(StockID_List):
@@ -354,7 +372,8 @@ def updateWaferQtyRevenuebyPortfolio_mssql(cfg, yqdate):
 
 cfg_fname = r"./config/config.json"
 
-year, quarter = getPerviousQuarter(cfg_fname)
+# 取得以今天做base的前一個年+季
+year, quarter = getYearQuarterVal(cfg_fname, dt.today(), -1)
 
 StockList = getConfigData(cfg_fname, "stocklist")
 
@@ -396,7 +415,7 @@ for StockID in StockList:
 
     # 取得item的固定值--季的第一天
     if YQFirstDate == "":
-        YQFirstDate = getQuarterFirstDate(tbObj_Balance)
+        YQFirstDate = getQuarterFirstDateByTBObj(tbObj_Balance)
     # 在當季的Wafer Qty
     WQTY_8  = getWaferQty_mssql(StockID, YQFirstDate, 8)
     WQTY_12 = getWaferQty_mssql(StockID, YQFirstDate, 12)

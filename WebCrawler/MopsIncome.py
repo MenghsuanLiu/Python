@@ -4,7 +4,7 @@ import re
 import requests as req
 import pandas as pd
 import numpy as np
-import datetime
+from datetime import date as dt
 import pymssql
 import json
 from dateutil.relativedelta import relativedelta
@@ -29,18 +29,20 @@ def getBSobj_genFile(Catg_YM_cfg):
     # url = url_model.format(Category, YM)
     urlwithhead = req.get(url, headers = head_info)
     urlwithhead.encoding = "big5"
+    # 抓config檔決定是否要產生File
     genfile = getConfigData(Catg_YM_cfg[2], "gen_html")
 
-
-    ## 寫網頁原始碼到檔案中(有值就要產生File)
-    if genfile != None:
-        wpath = getConfigData(Catg_YM_cfg[2], "webpath")
-        # 產生出的檔案存下來
-        ## 建立目錄,不存在才建...    
-        if os.path.exists(wpath) == False:
-            os.makedirs(wpath)
-        rootlxml = bs(urlwithhead.text, "lxml")
-        with open ( f"{wpath}/imcome_{Catg_YM_cfg[0]}_{Catg_YM_cfg[1]}.html", mode = "w", encoding = "UTF-8") as web_html:
+    # 判斷是否要產生File,不產生就直接把BS Obj傳出去
+    if genfile == None:
+        return bs(urlwithhead.text, "lxml")
+    ## 寫網頁原始碼到檔案中 Catg_YM_cfg[2]是config檔的路徑
+    wpath = getConfigData(Catg_YM_cfg[2], "webpath")
+    # 產生出的檔案存下來
+    ## 建立目錄,不存在才建...    
+    if os.path.exists(wpath) == False:
+        os.makedirs(wpath)
+    rootlxml = bs(urlwithhead.text, "lxml")
+    with open ( f"{wpath}/imcome_{Catg_YM_cfg[0]}_{Catg_YM_cfg[1]}.html", mode = "w", encoding = "UTF-8") as web_html:
             web_html.write(rootlxml.prettify())
     #傳出BeautifulSoup物件
     return bs(urlwithhead.text, "lxml")
@@ -53,31 +55,36 @@ def getTBobj_genFile(bsobj, Catg_YM_cfg, ind):
         return None
     
     genfile = getConfigData(Catg_YM_cfg[2], "gen_html")
-    if genfile != None:
-        web_path = getConfigData(Catg_YM_cfg[2], "webpath")
-        with open (f"{web_path}/tb_{ind}_{Catg_YM_cfg[0]}_{Catg_YM_cfg[1]}.html", mode = "w", encoding = "UTF-8") as web_html:
-            web_html.write(tb.prettify())
+    if genfile == None:
+        return tb
+
+    web_path = getConfigData(Catg_YM_cfg[2], "webpath")
+    with open (f"{web_path}/tb_{ind}_{Catg_YM_cfg[0]}_{Catg_YM_cfg[1]}.html", mode = "w", encoding = "UTF-8") as web_html:
+        web_html.write(tb.prettify())
     return tb    
 
 # 取得民國年月...從今天開始算,出來就是List
-def getChineseMonthFromToday(num):
-    num = num * -1
-    # 年月日(用今天去抓想要的月)
-    newdate = datetime.date.today() - relativedelta(months = num)
+def getChineseMonthFromDate(dateval, num):
+    num *= -1
+    # 如果進來的不是日期,就要轉換
+    if not isinstance(dateval, dt):
+        dateval = dateval.replace("-","").replace("/","")
+        dateval = dt(int(str(dateval)[0:4]), int(str(dateval)[4:6]), int(str(dateval)[6:8]))
+    # 年月日(用日期去抓想要的月)
+    newdate = dateval - relativedelta(months = num)
     # 用list包起來取得民國年月
-    ym = [str( newdate.year - 1911 ) + "_" + str( newdate.month )]
-    return ym
+    return [str( newdate.year - 1911 ) + "_" + str( newdate.month )]
 
 # 取得民國年List
 def getChineseYearMonthList(cfg):
     ym = getConfigData(cfg, "manual_yearmon")
     if ym == None:
-        return getChineseMonthFromToday(-1)
-    else:
-        if not isinstance(ym, list):
-            return [ym]
-        else:
-            return ym
+        return getChineseMonthFromDate(dt.today(), -1)
+    
+    if not isinstance(ym, list):
+        return [ym]
+    
+    return ym
 
 # 取得公司類別代碼及中文說明
 def getCategoryChinseseDesc(cfg):
@@ -141,30 +148,30 @@ def splitPSMCRevenueByBU(list):
     pwd_enc = "215_203_225_72_88_148_169_83_98_"
     pwd = dectry(pwd_enc)
     try:
-        if list[1] == "6770":
-            ym = list[0]
-            ym = ym.split("-")[0] + str(ym.split("-")[1] if int(ym.split("-")[1]) >= 10 else "0" + ym.split("-")[1]) +"%"
-            with pymssql.connect( server = "8AEISS01", user = "sap_user", password = pwd, database = "BIDC" ) as conn:
-                with conn.cursor() as cursor:
-                    try:
-                        type1, type2 = "F2", "L2"
-                        cursor.execute(f"""SELECT SUM(revenu) as val 
-                                            FROM ( 
-                                                SELECT SUM(IIF( FKART NOT IN ('{type1}', '{type2}'), LNETW * -1, LNETW)) as revenu
-                                                    FROM SAP.dbo.sapRevenue
-                                                    WHERE FKDAT LIKE '{ym}'
-                                                UNION
-                                                SELECT SUM(IIF( FKART NOT IN ('{type1}', '{type2}'), LNETW * -1, LNETW)) as revenu
-                                                    FROM F12SAP.dbo.sapRevenue
-                                                    WHERE FKDAT LIKE '{ym}'
-                                                ) as a""")
-                        revenueval = round([float(r[0]) for r in cursor.fetchall()][0] / 1000, 0)
-                        return revenueval
-                    except:
-                        logger.exception("message")
-                        return 0
-        else:
-            return 0    
+        if list[1] != "6770":
+            return 0 
+        
+        ym = list[0]
+        ym = ym.split("-")[0] + str(ym.split("-")[1] if int(ym.split("-")[1]) >= 10 else "0" + ym.split("-")[1]) +"%"
+        with pymssql.connect( server = "8AEISS01", user = "sap_user", password = pwd, database = "BIDC" ) as conn:
+            with conn.cursor() as cursor:
+                try:
+                    type1, type2 = "F2", "L2"
+                    cursor.execute(f"""SELECT SUM(revenu) as val 
+                                        FROM ( 
+                                            SELECT SUM(IIF( FKART NOT IN ('{type1}', '{type2}'), LNETW * -1, LNETW)) as revenu
+                                                FROM SAP.dbo.sapRevenue
+                                                WHERE FKDAT LIKE '{ym}'
+                                            UNION
+                                            SELECT SUM(IIF( FKART NOT IN ('{type1}', '{type2}'), LNETW * -1, LNETW)) as revenu
+                                                FROM F12SAP.dbo.sapRevenue
+                                                WHERE FKDAT LIKE '{ym}'
+                                            ) as a""")
+                    revenueval = round([float(r[0]) for r in cursor.fetchall()][0] / 1000, 0)
+                    return revenueval
+                except:
+                    logger.exception("message")
+                    return 0              
     except:
         return 0
 
@@ -188,6 +195,7 @@ def getMarketNameFromBSObj(bsobj):
 def getComplist_mssql():
     df_list = []
     pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
+    # 先Try可不可以連線
     try:
         with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = dectry(pwd_enc), database = "BIDC" ) as conn:
             with conn.cursor() as cursor:
@@ -207,36 +215,38 @@ def getComplist_mssql():
 def updateRevenue_mssql(DataI, ymclist, cfg):
     pwd_enc = "211_211_212_72_168_196_229_85_94_217_153_"
     up_db = getConfigData(cfg, "update_db")
-    if up_db != None and DataI != []:
-        # 先把進來的民國年月List轉換成DB用的西元年用
-        ymlist = []
-        for ym_c in ymclist:
-            ym = ChineseYearMonToCE(ym_c)
-            ymlist.append(ym)
+    if up_db == None:
+        logger.info("Config Without Update mopsRevenueByCompany!!")
+        return
+    # 先把進來的民國年月List轉換成DB用的西元年用
+    ymlist = []
+    for ym_c in ymclist:
+        ym = ChineseYearMonToCE(ym_c)
+        ymlist.append(ym)
 
-        # 資料先做轉換 List to Tuple
-        ym_tuple = [x for x in zip(*[iter(ymlist)])]
-        ary_data = np.array(DataI)
-        item_tuple = list(map(tuple, ary_data[:,[0, 14, 1, 15, 11]]))
-        # 連結資料庫
-        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = dectry(pwd_enc), database = "BIDC" ) as conn:
-            with conn.cursor() as cursor:
-                # 先刪資料
-                try:      
-                    cursor.executemany("DELETE FROM BIDC.dbo.mopsRevenueByCompany WHERE YearMonth = %s", ym_tuple)
-                    conn.commit()
-                    logger.info("mopsRevenueByCompany Delete Complete")
-                except:
-                    logger.exception("message")
-                    return
-                # 寫入資料
-                try:
-                    cursor.executemany("INSERT INTO BIDC.dbo.mopsRevenueByCompany (YearMonth, BU, StockID, Revenue, Remark) VALUES (%s, %s, %s, %d, %s)", item_tuple) 
-                    conn.commit()
-                    logger.info("mopsRevenueByCompany Insert Complete")
-                except:
-                    logger.exception("message")
-                    return
+    # 資料先做轉換 List to Tuple
+    ym_tuple = [x for x in zip(*[iter(ymlist)])]
+    ary_data = np.array(DataI)
+    item_tuple = list(map(tuple, ary_data[:,[0, 14, 1, 15, 11]]))
+    # 連結資料庫
+    with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = dectry(pwd_enc), database = "BIDC" ) as conn:
+        with conn.cursor() as cursor:
+            # 先刪資料
+            try:      
+                cursor.executemany("DELETE FROM BIDC.dbo.mopsRevenueByCompany WHERE YearMonth = %s", ym_tuple)
+                conn.commit()
+                logger.info("mopsRevenueByCompany Delete Complete")
+            except:
+                logger.exception("message")
+                return
+            # 寫入資料
+            try:
+                cursor.executemany("INSERT INTO BIDC.dbo.mopsRevenueByCompany (YearMonth, BU, StockID, Revenue, Remark) VALUES (%s, %s, %s, %d, %s)", item_tuple) 
+                conn.commit()
+                logger.info("mopsRevenueByCompany Insert Complete")
+            except:
+                logger.exception("message")
+                return
  
 # 更新DB中Company List的Data     
 def updateCompList_mssql(DataI, cfg):
@@ -261,68 +271,69 @@ def updateCompList_mssql(DataI, cfg):
         if chk != None and [c[0]] not in ids:
             up_CData.append([c[0], c[1], c[2], c[3], shown])
             ids.append([c[0]])
-    if up_CData != []:
-        sid_tuple = list(map(tuple, np.array(ids)))
-        comp_tuple = list(map(tuple, np.array(up_CData)))
-        # 連結資料庫
-        with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = dectry(pwd_enc), database = "BIDC" ) as conn:
-            with conn.cursor() as cursor:
-                # 先刪資料
-                try:      
-                    cursor.executemany("DELETE FROM BIDC.dbo.mopsStockCompanyInfo WHERE StockID = %s", sid_tuple)
-                    conn.commit()
-                    logger.info("mopsStockCompanyInfo Delete Complete")
-                except:
-                    logger.exception("message")
-                    return
+    if up_CData == []:
+        return
 
-                # 寫入資料
-                try:
-                    cursor.executemany("INSERT INTO BIDC.dbo.mopsStockCompanyInfo (StockID, StockName, Market, Industry, EnShowName) VALUES (%s, %s, %s, %s, %s)", comp_tuple) 
-                    conn.commit()
-                    logger.info("mopsStockCompanyInfo Insert Complete")
-                except:
-                    logger.exception("message")
-                    return
-    return
+    sid_tuple = list(map(tuple, np.array(ids)))
+    comp_tuple = list(map(tuple, np.array(up_CData)))
+    # 連結資料庫
+    with pymssql.connect( server = "RAOICD01", user = "owner_sap", password = dectry(pwd_enc), database = "BIDC" ) as conn:
+        with conn.cursor() as cursor:
+            # 先刪資料
+            try:      
+                cursor.executemany("DELETE FROM BIDC.dbo.mopsStockCompanyInfo WHERE StockID = %s", sid_tuple)
+                conn.commit()
+                logger.info("mopsStockCompanyInfo Delete Complete")
+            except:
+                logger.exception("message")
+                return
+
+            # 寫入資料
+            try:
+                cursor.executemany("INSERT INTO BIDC.dbo.mopsStockCompanyInfo (StockID, StockName, Market, Industry, EnShowName) VALUES (%s, %s, %s, %s, %s)", comp_tuple) 
+                conn.commit()
+                logger.info("mopsStockCompanyInfo Insert Complete")
+            except:
+                logger.exception("message")
+                return
         
         
 # 寫資料到Excel
 def writeExcel(DataH, DataI, ymlist, cfgfile):
     # 判斷是否需要產生Excel File
     genxls = getConfigData(cfgfile, "update_xls")
-    if genxls != None:
-        if len(ymlist) > 1:
-            ymlist = sorted(ymlist)
-            fname_ym = f"{ymlist[0]}-{ymlist[-1]}"
-        else:
-            fname_ym = ymlist[0]  
-        if DataH != [] and DataI !=[]:
-            # 存成檔案時的目錄
-            file_path = getConfigData(cfgfile, "filepath")
-            # 建立目錄,不存在才建...
-            if os.path.exists(file_path) == False:
-                os.makedirs(file_path)
-            # 最後一個欄位是為了寫資料庫加的
-            for x in DataI:
-                del x[-1]
-            # 轉換成DataFrame    
-            df_imcome = pd.DataFrame(DataI, columns = DataH)
-            ## 寫到Excel
-            try:
-                df_imcome.to_excel(rf"{file_path}/Revenue_{fname_ym}.xlsx", index = False)
-                logger.info(f"Create {file_path}/Revenue_{fname_ym}.xlsx Success!!")
-                # return print(f"Create Revenue.xlsx Success!!")
-            except:
-                logger.exception("message")
-                # return print(f"Create Revenue.xlsx Fail!!")
-        else:
-            logger.info("No Data to Create Excel File!")
-            # return print("Did not Collect Data!!")        
-    else:
+    if genxls == None:
         logger.info("Config Without Create Excel File!!")
-    return
+        return
 
+    if len(ymlist) > 1:
+        ymlist = sorted(ymlist)
+        fname_ym = f"{ymlist[0]}-{ymlist[-1]}"
+    else:
+        fname_ym = ymlist[0]  
+
+    if DataH == [] and DataI == []:
+        logger.info("No Data to Create Excel File!")
+        return
+    # 存成檔案時的目錄
+    file_path = getConfigData(cfgfile, "filepath")
+    # 建立目錄,不存在才建...
+    if os.path.exists(file_path) == False:
+        os.makedirs(file_path)
+    # 最後一個欄位是為了寫資料庫加的
+    for x in DataI:
+        del x[-1]
+    # 轉換成DataFrame    
+    df_imcome = pd.DataFrame(DataI, columns = DataH)
+    ## 寫到Excel
+    try:
+        df_imcome.to_excel(rf"{file_path}/Revenue_{fname_ym}.xlsx", index = False)
+        logger.info(f"Create {file_path}/Revenue_{fname_ym}.xlsx Success!!")
+        # return print(f"Create Revenue.xlsx Success!!")
+    except:
+        logger.exception("message")
+        # return print(f"Create Revenue.xlsx Fail!!")
+    return
 
 
 # %%
