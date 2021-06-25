@@ -117,26 +117,29 @@ def getBSobj_genFile(StockID_List, genfile):
         return None
 
     ## 寫網頁原始碼到檔案中(有值就要產生File)
-    if genfile != None:
-        wpath = getConfigData(StockID_List[3], "webpath")
-        # 產生出的檔案存下來
-        ## 建立目錄,不存在才建...    
-        if os.path.exists(wpath) == False:
-            os.makedirs(wpath)
-        rootlxml = bs(urlwithhead.text, "lxml")
-        with open ( f"{wpath}/FinancialWeb_{StockID_List[0]}_{StockID_List[1]}Q{StockID_List[2]}.html", mode = "w", encoding = "UTF-8") as web_html:
-            web_html.write(rootlxml.prettify())
+    if genfile == None:
+        return bs(urlwithhead.text, "lxml")
+
+    wpath = getConfigData(StockID_List[3], "webpath")
+    # 產生出的檔案存下來
+    ## 建立目錄,不存在才建...    
+    if os.path.exists(wpath) == False:
+        os.makedirs(wpath)
+    rootlxml = bs(urlwithhead.text, "lxml")
+    with open ( f"{wpath}/FinancialWeb_{StockID_List[0]}_{StockID_List[1]}Q{StockID_List[2]}.html", mode = "w", encoding = "UTF-8") as web_html:
+        web_html.write(rootlxml.prettify())
     #傳出BeautifulSoup物件
     return bs(urlwithhead.text, "lxml")
 
 # 從BS物件中抓出特定的Table
 def getTBobj_genFile(bsobj, tbID, genfile, StockID_List):
     tb_data = bsobj.find_all("table")[tbID]
-    if genfile != None:
-        wpath = getConfigData(StockID_List[3],"webpath")
-        fname = "tb_" + tb_data.find_all("th")[0].find("span", class_ ="en").text.strip().replace(" ","")
-        with open (f"{wpath}/{fname}_{StockID_List[0]}_{StockID_List[1]}Q{StockID_List[2]}.html", mode = "w", encoding = "UTF-8") as web_html:
-            web_html.write(tb_data.prettify())
+    if genfile == None:
+        return  tb_data
+    wpath = getConfigData(StockID_List[3],"webpath")
+    fname = "tb_" + tb_data.find_all("th")[0].find("span", class_ ="en").text.strip().replace(" ","")
+    with open (f"{wpath}/{fname}_{StockID_List[0]}_{StockID_List[1]}Q{StockID_List[2]}.html", mode = "w", encoding = "UTF-8") as web_html:
+        web_html.write(tb_data.prettify())
     return  tb_data
 
 # 取得Header Text
@@ -183,48 +186,46 @@ def getFirst3PeriodImcome(StockID_List):
     itemlist = []
     
     # 只有第4季才需把前三季的加總
-    if StockID_List[2] == "4":
-        # 先處理第一季
-        BsObj_1st = getBSobj_genFile(ID_Y_Q1st_cfg, None)
-        
-        # 若沒有第一季季報,就抓半年報
-        if BsObj_1st == None:
-            # Q換Q2
-            ID_Y_Q1st_cfg[2] = "2"
-            BsObj_1st = getBSobj_genFile(ID_Y_Q1st_cfg, None)
-
-        # 取得Income的會科清單
-        GL_Imcome = getConfigData(StockID_List[3], "glst1")
-        # 從BSObject取得Income的Table
-        tbObj_Imcome_1st =  getTBobj_genFile(BsObj_1st, 1, None, ID_Y_Q1st_cfg)
-        try:
-            for gl in GL_Imcome:
-                val = getItemVal(tbObj_Imcome_1st, gl)
-                if gl == "9750":
-                    itemlist.append(float(val))
-                else:
-                    itemlist.append(int(val))
-            itemdict = dict(zip(GL_Imcome, itemlist))
-        except:
-            return 0
-
-        # 表示這個公司有季報
-        if ID_Y_Q1st_cfg[2] == "1":
-        # 累加第二,三季
-            for q in range(2,4):
-                ID_Y_Q_cfg = [StockID_List[0], StockID_List[1], str(q), StockID_List[3]]
-                BsObj = getBSobj_genFile(ID_Y_Q_cfg, None)
-                tbObj_Imcome =  getTBobj_genFile(BsObj, 1, None, ID_Y_Q_cfg)
-                for gl in GL_Imcome:
-                    val = getItemVal(tbObj_Imcome, gl)
-                    if gl == "9750":
-                        itemdict[gl] += float(val)
-                    else:    
-                        itemdict[gl] += int(val)
-
-        return itemdict
-    else:
+    if StockID_List[2] != "4":
         return 0
+    # 先處理第一季
+    BsObj_1st = getBSobj_genFile(ID_Y_Q1st_cfg, None)
+        
+    # 若沒有第一季季報,就抓半年報
+    if BsObj_1st == None:
+        # Q換Q2
+        ID_Y_Q1st_cfg[2] = "2"
+        BsObj_1st = getBSobj_genFile(ID_Y_Q1st_cfg, None)
+
+    # 取得Income的會科清單
+    GL_Imcome = getConfigData(StockID_List[3], "glst1")
+    # 從BSObject取得Income的Table
+    tbObj_Imcome_1st =  getTBobj_genFile(BsObj_1st, 1, None, ID_Y_Q1st_cfg)
+    try:
+        for gl in GL_Imcome:
+            val = getItemVal(tbObj_Imcome_1st, gl)
+            if gl == "9750":
+                itemlist.append(float(val))
+                continue
+            itemlist.append(int(val))
+        itemdict = dict(zip(GL_Imcome, itemlist))
+    except:
+        return 0
+
+    # 表示這個公司有季報
+    if ID_Y_Q1st_cfg[2] == "1":
+    # 累加第二,三季
+        for q in range(2,4):
+            ID_Y_Q_cfg = [StockID_List[0], StockID_List[1], str(q), StockID_List[3]]
+            BsObj = getBSobj_genFile(ID_Y_Q_cfg, None)
+            tbObj_Imcome =  getTBobj_genFile(BsObj, 1, None, ID_Y_Q_cfg)
+            for gl in GL_Imcome:
+                val = getItemVal(tbObj_Imcome, gl)
+                if gl == "9750":
+                    itemdict[gl] += float(val)
+                    continue
+                itemdict[gl] += int(val)
+    return itemdict
 
 # 取得現金流量表前一季的值(只有年/半年報的在Q4取Q2資料)
 def getPeriodCashFlow(StockID_List):
@@ -454,6 +455,7 @@ for StockID in StockList:
         val = getItemVal(tbObj_CashFlows, gl)
         if dict_cashflow != 0:
             last_cnt_val = dict_cashflow[gl]
+            continue
         else:
             last_cnt_val = 0
 
