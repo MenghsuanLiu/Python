@@ -10,6 +10,7 @@ import time
 import json
 from util.EncryptionDecrypt import dectry
 
+# %%
 # 取得config檔中的資料
 def getConfigData(file_path, datatype):
     try:
