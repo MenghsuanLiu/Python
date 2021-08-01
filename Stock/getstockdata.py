@@ -198,7 +198,7 @@ stocks = ["TSE", "OTC", "OES"]
 # stocks = ["TSE"]
 stk_list = getStockData(stk_api, stocks, "LIST")
 stk_df = getStockDailyData(stk_api, stk_list)
-# %%
+
 stk_df = getStockSMA(stk_df, [5, 10, 20, 60])
 stk_df = getStockBBands(stk_df, 10, 2) 
 stk_df = getStockSAR(stk_df, 0.02, 0.2)
@@ -212,13 +212,27 @@ for k in keyindex:
 first = True
 for stockid, gp_df in stk_df.groupby("StockID"):
     gp_df = gp_df.sort_values(by = "ts_date", ascending = False)
-    gp_df =  gp_df.iloc[[0]].filter(items = (["StockID", "ts_date", "Close"] + [x for x in df.columns[df.columns.str.contains('sgl')]]))
+    gp_df =  gp_df.iloc[[0]].filter(items = (["StockID", "ts_date", "Close"] + [x for x in gp_df.columns[gp_df.columns.str.contains('sgl')]]))
     if first == True:
         df = gp_df
         first = False
     else:
         df = df.append(gp_df)
 # df = df.reset_index()
+# %%
+vol_df = pd.read_csv(r"./data/download_file/vloumn.csv", low_memory = False).filter(items = ["證券代號", "證券名稱", "投信買賣超股數"]).rename(columns = {"證券代號": "StockID", "證券名稱": "StockName", "投信買賣超股數": "投信"})
+# %%
+# join
+# 投信買賣超股數
+# df.StockID = df.StockID.astype(str)
+# vol_df["StockID"] = vol_df["StockID"].apply(str)
+# vol_df.dtypes
+# df.dtypes
+a = df.merge(vol_df, on = ["StockID"], how = "left")
+# %%
+a.to_excel(r"./data/download_file/result.xlsx")
+# %%
+
 df = df.loc[(df["sgl_SMA"] > 0) | (df["sgl_BBands"] > 0) | (df["sgl_SAR_002"] > 0) | (df["sgl_SAR_003"] > 0)]
 df = df.sort_values(by = "StockID")
 
