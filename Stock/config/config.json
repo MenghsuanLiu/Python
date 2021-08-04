@@ -1,5 +1,9 @@
 {
     "filepath": "./data/download_file",
+    "bkpath": "./data/backup_file",
     "webpath": "./data/html_file",
-    "genhtml": "X"
+    "hisname": "StockHistory",
+    "volname": "DailyVolume",
+    "resultname": "DailyReport",
+    "genhtml": ""
 }
