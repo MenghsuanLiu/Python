@@ -3,7 +3,7 @@ import os
 import requests as req
 import json
 import pandas as pd
-
+from datetime import date
 from bs4 import BeautifulSoup as bs
 
 def getConfigData(file_path, datatype):
@@ -66,8 +66,8 @@ def getHeaderLine(tbObj):
 
 # %%
 cfg_fname = r"./config/config.json"
-
-TB_Obj = getTBobj(getBSobj("20210730", cfg_fname), 0, cfg_fname)
+ymd = date.today().strftime("%Y%m%d")
+TB_Obj = getTBobj(getBSobj(ymd, cfg_fname), 0, cfg_fname)
 Header = getHeaderLine(TB_Obj)
 ItemData = []
 for rows in TB_Obj.select("table > tbody > tr")[1:]:
@@ -80,11 +80,25 @@ for rows in TB_Obj.select("table > tbody > tr")[1:]:
         else:
             val = int(col.text.replace(",", "").strip())
         itemlist.append(val)
-    ItemData.append(itemlist)  
-# %%
+    ItemData.append(itemlist)
+    
 df_vol = pd.DataFrame(ItemData, columns = Header)
 fpath = getConfigData(cfg_fname, "filepath")
+volfile = f"{fpath}/" + getConfigData(cfg_fname, "volname") + f"_{ymd}.csv"
 if os.path.exists(fpath) == False:
     os.makedirs(fpath)
-df_vol.to_csv(f"{fpath}/vloumn.csv", index = False)
+df_vol.to_csv(volfile, index = False)
+# %%
+
+cfg_fname = r"./config/config.json"
+
+files = os.listdir(getConfigData(cfg_fname, "filepath"))
+
+matching = [s for s in files if getConfigData(cfg_fname, "volname") in s]
+# %%
+for file in matching:
+    filename = file.split(sep = ".")[0]
+    fmname = getConfigData(cfg_fname, "filepath") + f"/{file}"
+    toname = getConfigData(cfg_fname, "bkpath") + f"/{filename}_bk.csv"
+    os.replace(fmname, toname)
 # %%

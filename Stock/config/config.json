@@ -2,8 +2,10 @@
     "filepath": "./data/download_file",
     "bkpath": "./data/backup_file",
     "webpath": "./data/html_file",
+    "dailypath": "./data/daily_file",
     "hisname": "StockHistory",
     "volname": "DailyVolume",
     "resultname": "DailyReport",
+    "kbarname": "DailyKbar",
     "genhtml": ""
 }
