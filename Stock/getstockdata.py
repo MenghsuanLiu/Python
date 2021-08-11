@@ -86,7 +86,8 @@ def getStockData(api, stocks, datatype):
         # 不要權證/金融股 / 小於20元
         df_market = df_market[~df_market["category"].isin(["00", "", "17"]) & ~df_market["name"].str.contains("KY")]
         df_market = df_market[( df_market["limit_up"] + df_market["limit_down"] ) / 2 >= 20]
-
+        df_market = df_market[df_market["update_date"] == date.today().strftime("%Y/%m/%d")]
+    
         if s == stocks[0]:
             df = df_market
         else:
@@ -301,11 +302,11 @@ def writeRawData(api, Stk_list, cfg):
             os.rename(hisfile, hisbkfile)
     
     df_new = df_new.sort_values(by = ["StockID", "ts_date"], ascending = True).reset_index(drop = True)
-    df_new.to_csv(hisfile, index = False)
+    df_new.to_csv(hisfile, index = False, encoding = "utf_8_sig")
 
     data_date = data_date.strftime("%Y%m%d")
     df_today = df_today.sort_values(by = ["StockID", "ts_date", "ts_time"]).reset_index(drop = True)
-    df_today.to_csv(f"{dypath}/" + getConfigData(cfg, "kbarname") + f"_{data_date}.csv", index = False)
+    df_today.to_csv(f"{dypath}/" + getConfigData(cfg, "kbarname") + f"_{data_date}.csv", index = False, encoding = "utf_8_sig")
     return
 
 def mergeVolumeData(dframe, cfg):
@@ -353,9 +354,19 @@ def writeResultData(dframe, cfg):
     return df
 
 
-def getBSobj(YYYYMMDD, cfg):
+def getBSobj(YYYYMMDD, market, cfg):
     head_info = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
-    url = f"https://www.twse.com.tw/fund/T86?response=html&date={YYYYMMDD}&selectType=ALL"
+    
+    # 上市
+    if market == "TSE":
+        # 網頁取得自 https://www.twse.com.tw/zh/page/trading/fund/T86.html (列印 / HTML)
+        # url = f"https://www.twse.com.tw/fund/T86?response=html&date={YYYYMMDD}&selectType=ALL"
+        url = f"https://www.twse.com.tw/fund/T86?response=html&date={YYYYMMDD}&selectType=ALLBUT0999"
+    # 上櫃
+    if market == "OTC":
+        # 網頁取得自 https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge.php?l=zh-tw (列印/匯出HTML)
+        ymd = f"{str(int(YYYYMMDD[0:4]) - 1911)}/{YYYYMMDD[4:6]}/{YYYYMMDD[6:8]}"
+        url = f"https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&o=htm&se=EW&t=D&d={ymd}&s=0,asc"
     # 處理網址
     urlwithhead = req.get(url, headers = head_info)
     urlwithhead.encoding = "utf-8"
@@ -371,13 +382,13 @@ def getBSobj(YYYYMMDD, cfg):
         if os.path.exists(wpath) == False:
             os.makedirs(wpath)
         rootlxml = bs(urlwithhead.text, "lxml")
-        with open(f"{wpath}/三大法人買賣超日報_{YYYYMMDD}.html", mode="w", encoding="UTF-8") as web_html:
+        with open(f"{wpath}/{market}_三大法人買賣超日報_{YYYYMMDD}.html", mode="w", encoding="UTF-8") as web_html:
             web_html.write(rootlxml.prettify())
 
     #傳出BeautifulSoup物件     
     return bs(urlwithhead.text, "lxml")
 
-def getTBobj(bsobj, tbID, cfg):
+def getTBobj(bsobj, tbID, market, cfg):
     tb = bsobj.find_all("table")[tbID]
     # 抓config檔決定是否要產生File
     genfile = getConfigData(cfg, "genhtml")
@@ -389,7 +400,7 @@ def getTBobj(bsobj, tbID, cfg):
         ## 建立目錄,不存在才建...
         if os.path.exists(wpath) == False:
             os.makedirs(wpath)
-        with open(f"{wpath}/table.html", mode="w", encoding="UTF-8") as web_html:
+        with open(f"{wpath}/{market}_table.html", mode="w", encoding="UTF-8") as web_html:
             web_html.write(tb.prettify())
     return tb
 
@@ -399,43 +410,55 @@ def getHeaderLine(tbObj):
         headtext.append(head.text)
     return headtext
 
-def writeLegalPersonDailyStockVolume(cfg):
+def writeLegalPersonDailyStockVolume(marketlist, cfg):
     fpath = getConfigData(cfg, "dailypath")
     if os.path.exists(fpath) == False:
         os.makedirs(fpath)
-    # 找出離今天最近日期有值的日期
-    for i in range(0,10):
-        ymd = (date.today() - timedelta(days = i)).strftime("%Y%m%d")
-        try:
-            TB_Obj = getTBobj(getBSobj(ymd, cfg), 0, cfg)
-            break
-        except:
-            continue
-    # 找出現存的檔案最近的日期[File: DailyVolume_<YYYYMMDD>.csv]
-    file_list = sorted([s for s in os.listdir(fpath) if getConfigData(cfg, "volname") in s], reverse = True)
-    file_last_date = ((file_list[0].split("_"))[1].split("."))[0]
-    if file_last_date == ymd:        
-        return print(f"離今天最近的檔案己存在!!({file_list[0]})")
-    # 準備檔案名
-    volfile = f"{fpath}/" + getConfigData(cfg, "volname") + f"_{ymd}.csv"
-    # 取得表頭
-    Header = getHeaderLine(TB_Obj)
-    # 取得Item
-    ItemData = []
-    for rows in TB_Obj.select("table > tbody > tr")[0:]:
-        itemlist = []
-        colnum = 0
-        for col in rows.select("td"):
-            colnum += 1
-            if colnum in (1, 2):
-                val = col.string.strip()
-            else:
-                val = int(col.text.replace(",", "").strip())
-            itemlist.append(val)
-        ItemData.append(itemlist)
+
+    day_check = False
+    for mkt in marketlist:
+        # 找出離今天最近日期有值的日期
+        for i in range(0,10):
+            ymd = (date.today() - timedelta(days = i)).strftime("%Y%m%d")
+            try:
+                TB_Obj = getTBobj(getBSobj(ymd, mkt, cfg), 0, mkt, cfg)
+                break
+            except:
+                continue
+        # 表示這次的loop還沒有檢查日期
+        if day_check == False:
+            # 找出現存的檔案最近的日期[File: DailyVolume_<YYYYMMDD>.csv]
+            file_list = sorted([s for s in os.listdir(fpath) if getConfigData(cfg, "volname") in s], reverse = True)
+            file_last_date = ((file_list[0].split("_"))[1].split("."))[0]
+            if file_last_date == ymd:        
+                return print(f"離今天最近的檔案己存在!!({file_list[0]})")
+            # 準備檔案名
+            volfile = f"{fpath}/" + getConfigData(cfg, "volname") + f"_{ymd}.csv"
+            day_check = True
+        # 取得表頭(只用上市的表頭就好)
+        if mkt == "TSE":
+            ItemData = []
+            Header = getHeaderLine(TB_Obj)
+        # 取得Item
+        for rows in TB_Obj.select("table > tbody > tr")[0:]:
+            itemlist = []
+            colnum = 0
+            for col in rows.select("td"):
+                colnum += 1
+                if colnum in (1, 2):
+                    val = col.string.strip()
+                else:                
+                    val = int(col.text.replace(",", "").strip())
+                if mkt == "OTC" and colnum in [9, 10, 11, 21, 22]:
+                    continue
+                itemlist.append(val)
+            if  mkt == "OTC":
+                neworder = list(range(0,11)) + [17] + list(range(11,17)) + [18]
+                itemlist = [itemlist[i] for i in neworder]   
+            ItemData.append(itemlist)
     # 產生DataFrame
     df_vol = pd.DataFrame(ItemData, columns = Header).sort_values(by =  ["投信買賣超股數"], ascending = False)  
-    df_vol.to_csv(volfile, index = False)
+    df_vol.to_csv(volfile, index = False, encoding = "utf_8_sig")
     return
 
 
@@ -463,10 +486,11 @@ def event_callback(resp_code, event_code, event):
 
 
 
-# %%
+
+
 stk_api = connectToServer()
 
-# %%
+
 stocks = ["TSE", "OTC"]
 keyindex = ["SMA", "BBands", "SAR_002", "SAR_003", "maxmin_120", "maxmin_240"]
 # stocks = ["OTC"]
@@ -475,8 +499,8 @@ cfg_fname = r"./config/config.json"
 stk_info = getStockData(stk_api, stocks, "dataframe")
 stk_list = getStockData(stk_api, stocks, "List")
 writeRawData(stk_api, stk_list, cfg_fname)
-writeLegalPersonDailyStockVolume(cfg_fname)
-# %%
+writeLegalPersonDailyStockVolume(stocks, cfg_fname)
+
 # 取得每天的成交資料(後面數字是往回抓幾天)
 stk_df = getStockDailyData(stk_list, cfg_fname, 250)
 # 取得投信每日買賣超資料
