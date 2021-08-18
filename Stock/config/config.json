@@ -1,4 +1,5 @@
 {
+    "login": "./config/login.json",
     "filepath": "./data/download_file",
     "bkpath": "./data/backup_file",
     "webpath": "./data/html_file",

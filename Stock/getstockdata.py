@@ -1,34 +1,14 @@
 # %%
-import shioaji as sj
 import pandas as pd
 import requests as req
 import talib
 import os
-import json
 import time
 from datetime import date, timedelta, datetime
 from bs4 import BeautifulSoup as bs
+from util import connect as con
+from util import config as cfg
 
-
-# import numpy as np
-# import mplfinance as mpf
-def connectToServer():
-    # 登入帳號
-    api = sj.Shioaji(backend = "http", simulation=False)
-    with open("D:\GitHub\Python\Stock\config\login.json", "r") as f:
-        login_cfg = json.loads(f.read())
-    api.login(**login_cfg)
-    return api
-
-def getConfigData(file_path, datatype):
-    try:
-        with open(file_path, encoding="UTF-8") as f:
-            jfile = json.load(f)
-        val = jfile[datatype]    
-        # val =  ({True: "", False: jfile[datatype]}[jfile[datatype] == "" | jfile[datatype] == "None"])
-    except:
-        val = ""
-    return val
 
 def getSignal(dataframe, tatype):
     colnam = f"sgl_{tatype}"
@@ -64,10 +44,13 @@ def getSignal(dataframe, tatype):
     return dataframe
 
 # 只要上市/上櫃,不要金融, KY股, 股價>=20
-def getStockData(api, stocks, datatype):
+def getStockData(api, stocks):
+    # api.Contracts.Stocks資料結構
+    ## [exchange(市場), code(代碼), symbol(市場+代碼), name(公司名), category(產業分類), unit(1張1000股), limit_up(前一交易日漲停價), limit_down(前一交易日跌停價), reference(前一交易日收盤價), update_date(更新日)]
     df = []
     for s in stocks:
         df_market =[]
+        i = 0
         # 上市(筆數太多要等一下)
         if s == "TSE":
             market = api.Contracts.Stocks.TSE
@@ -85,36 +68,47 @@ def getStockData(api, stocks, datatype):
         # https://members.sitca.org.tw/OPF/K0000/files/F/01/%E8%AD%89%E5%88%B8%E4%BB%A3%E7%A2%BC%E7%B7%A8%E7%A2%BC%E5%8E%9F%E5%89%87.do分類對照表(17金融)
         # 不要權證/金融股 / 小於20元
         df_market = df_market[~df_market["category"].isin(["00", "", "17"]) & ~df_market["name"].str.contains("KY")]
-        df_market = df_market[( df_market["limit_up"] + df_market["limit_down"] ) / 2 >= 20]
-        df_market = df_market[df_market["update_date"] == date.today().strftime("%Y/%m/%d")]
+        # df_market = df_market[( df_market["limit_up"] + df_market["limit_down"] ) / 2 >= 20]
+        df_market = df_market[df_market["reference"] >= 20]
+
+
+        while True:
+            date_check = (date.today() - timedelta(days = i)).strftime("%Y/%m/%d")
+            df_check = df_market[df_market["update_date"] == date_check]
+            i += 1
+            if not df_check.empty:
+                df_market = df_check
+                break
     
         if s == stocks[0]:
             df = df_market
         else:
             df = df.append(df_market)
     
-    if datatype.lower() == "list":
-        return df["code"].to_list()
-    if datatype.lower() == "dataframe":
-        df = df.filter(items = ["code", "name", "exchange", "category"]).rename(columns = {"code": "StockID", "name": "StockName", "exchange": "上市/上櫃"}).replace({"TSE": "上市", "OTC": "上櫃", "OES": "興櫃"})
-        return df.reset_index(drop = True)
+    df = df.filter(items = ["code", "name", "exchange", "category", "update_date"]).rename(columns = {"code": "StockID", "name": "StockName", "exchange": "上市/上櫃"}).replace({"TSE": "上市", "OTC": "上櫃", "OES": "興櫃"})
+    return df.reset_index(drop = True)
 
-def getStockDailyData(Stklist, cfg, days):
-    fpath = getConfigData(cfg, "filepath")
-    fpath = f"{fpath}/" + getConfigData(cfg, "hisname") + ".csv"
+def getStockDailyData(StkDF, cfgname, days):
+    stk_lst = StkDF["StockID"].to_list()
+    fpath = cfg.getConfigValue(cfgname, "filepath")
+    fpath = f"{fpath}/" + cfg.getConfigValue(cfgname, "hisname") + ".csv"
     # 讀取資料
     df_history = pd.read_csv(fpath, low_memory = False)
     # StockID由int轉str
     df_history["StockID"] = df_history["StockID"].apply(str)
     # 只留下這次要的Stock List
-    df_history = df_history[df_history.StockID.isin(Stklist)]
+    df_history = df_history[df_history.StockID.isin(stk_lst)]
     # 轉換日期格式
     df_history["ts_date"] = pd.to_datetime(df_history["ts_date"], format = "%Y-%m-%d").dt.date
 
     # 只留下每個股票後250筆,要用後...後面算數SMA類的資料才會對
     first = True
     for stockid, gp_df in df_history.groupby("StockID"):
+        # stk_up_date = StkDF[StkDF["StockID"] == stockid].update_date.values[0]
         gp_df = gp_df.sort_values(by = "ts_date", ascending = True)
+        # 今天沒有交易資料就不要留這支
+        # if gp_df["ts_date"].tail(1).values[0].strftime("%Y/%m/%d") != stk_up_date:
+        #     continue
         gp_df = gp_df.tail(days)
         if first == True:
             df = gp_df
@@ -199,12 +193,13 @@ def getStockMACD(dframe, day_list):
 
 
 
-def writeRawData(api, Stk_list, cfg):    
+def writeRawData(api, StkDF, cfgname):  
+    Stk_list = StkDF["StockID"].to_list()
     file_exist = ""
-    fpath = getConfigData(cfg, "filepath")
-    bkpath = getConfigData(cfg, "bkpath")
-    dypath = getConfigData(cfg, "dailypath")
-    hisfile = f"{fpath}/" + getConfigData(cfg, "hisname") + ".csv"
+    fpath = cfg.getConfigValue(cfgname, "filepath")
+    bkpath = cfg.getConfigValue(cfgname, "bkpath")
+    dypath = cfg.getConfigValue(cfgname, "dailypath")
+    hisfile = f"{fpath}/" + cfg.getConfigValue(cfgname, "hisname") + ".csv"
     first = True
     # # 建立目錄,不存在才建...(./data)
     if os.path.exists(fpath) == False:
@@ -239,7 +234,7 @@ def writeRawData(api, Stk_list, cfg):
         # 資料日期的最後一天 = 備份資料的最後一天,就離開程式不用更新    
         if data_date.strftime("%Y%m%d") == dfbk_date:
             return
-
+        
         # 約抓一年份的資料
         # d_range = [datetime.strptime(f"{date.today().year - 1}-01-01", "%Y-%m-%d"), date.today()]
         d_range = [data_date - timedelta(days = 400), data_date]
@@ -285,7 +280,7 @@ def writeRawData(api, Stk_list, cfg):
 
     # 把歷史資料放進DF中
     if file_exist == "X":
-        hisbkfile = f"{bkpath}/" + getConfigData(cfg, "hisname") + f"_to_{dfbk_date}.csv"
+        hisbkfile = f"{bkpath}/" + cfg.getConfigValue(cfgname, "hisname") + f"_to_{dfbk_date}.csv"
         df_history["ts_date"] = pd.to_datetime(df_history["ts_date"], format = "%Y-%m-%d").dt.date
         # 把沒有在StockList中的再寫回今天的DF
         if not df_notinlist.empty:
@@ -301,49 +296,51 @@ def writeRawData(api, Stk_list, cfg):
             os.remove(hisbkfile) 
             os.rename(hisfile, hisbkfile)
     
+    # 累積的歷史資料
     df_new = df_new.sort_values(by = ["StockID", "ts_date"], ascending = True).reset_index(drop = True)
     df_new.to_csv(hisfile, index = False, encoding = "utf_8_sig")
-
+    # 當天每分鐘的OHLC的資料
     data_date = data_date.strftime("%Y%m%d")
+    df_today = df_today[["StockID", "ts_date", "ts_time", "Open", "High", "Low", "Close", "Volume", "ts"]]
     df_today = df_today.sort_values(by = ["StockID", "ts_date", "ts_time"]).reset_index(drop = True)
-    df_today.to_csv(f"{dypath}/" + getConfigData(cfg, "kbarname") + f"_{data_date}.csv", index = False, encoding = "utf_8_sig")
+    df_today.to_csv(f"{dypath}/" + cfg.getConfigValue(cfgname, "kbarname") + f"_{data_date}.csv", index = False, encoding = "utf_8_sig")
     return
 
-def mergeVolumeData(dframe, cfg):
+def mergeVolumeData(dframe, cfgname):
     # 找出這次資料的最後一筆日期
     df = dframe.sort_values(by = "ts_date", ascending = False)
     df_ymd = df["ts_date"].head(1).values[0].strftime("%Y%m%d")
     # 取出檔案清單,同時檢查需要的檔案是否存在
-    dlypath = getConfigData(cfg, "dailypath")
-    volfilename = getConfigData(cfg, "volname") + f"_{df_ymd}.csv"
+    dlypath = cfg.getConfigValue(cfgname, "dailypath")
+    volfilename = cfg.getConfigValue(cfgname, "volname") + f"_{df_ymd}.csv"
     volfullpath = dlypath + "/" + volfilename
-    file_list = sorted([s for s in os.listdir(dlypath) if getConfigData(cfg, "volname") in s], reverse = True)
+    file_list = sorted([s for s in os.listdir(dlypath) if cfg.getConfigValue(cfgname, "volname") in s], reverse = True)
     try:
         file_list.index(volfilename)
     except:
-        writeLegalPersonDailyStockVolume(cfg)
+        writeLegalPersonDailyStockVolume(cfgname)
     vol_df = pd.read_csv(volfullpath, low_memory = False).filter(items = ["證券代號", "投信買賣超股數"]).rename(columns = {"證券代號": "StockID"})
     vol_df.insert(0, "ts_date", df["ts_date"].head(1).values[0])
     return dframe.merge(vol_df, on = ["StockID", "ts_date"], how = "left")
 
-def writeResultData(dframe, cfg):
+def writeResultData(dframe, cfgname):
     # 找出這次資料的最後一筆日期
     df = dframe.sort_values(by = "ts_date", ascending = False)
     df_ymd = df["ts_date"].head(1).values[0].strftime("%Y%m%d")
-    resultfile = getConfigData(cfg, "filepath") + "/" + getConfigData(cfg, "resultname") + f"_{df_ymd}.xlsx"
+    resultfile = cfg.getConfigValue(cfgname, "filepath") + "/" + cfg.getConfigValue(cfgname, "resultname") + f"_{df_ymd}.xlsx"
     
-    files = os.listdir(getConfigData(cfg, "filepath"))
-    matching = [s for s in files if getConfigData(cfg, "resultname") in s]
+    files = os.listdir(cfg.getConfigValue(cfgname, "filepath"))
+    matching = [s for s in files if cfg.getConfigValue(cfgname, "resultname") in s]
 
     for file in matching:
-        fmname = getConfigData(cfg, "filepath") + f"/{file}"
-        toname = getConfigData(cfg, "bkpath") + f"/{file}"
+        fmname = cfg.getConfigValue(cfgname, "filepath") + f"/{file}"
+        toname = cfg.getConfigValue(cfgname, "bkpath") + f"/{file}"
         os.replace(fmname, toname)
 
     first = True
     for stockid, gp_df in dframe.groupby("StockID"):
         gp_df = gp_df.sort_values(by = "ts_date", ascending = False)
-        gp_df = gp_df.iloc[[0]].filter(items = (["StockID", "StockName", "上市/上櫃", "ts_date", "Close", "投信買賣超股數", ] + [x for x in gp_df.columns[gp_df.columns.str.contains('sgl')]]))
+        gp_df = gp_df.iloc[[0]].filter(items = (["StockID", "StockName", "上市/上櫃", "ts_date", "Close", "Volume", "投信買賣超股數", ] + [x for x in gp_df.columns[gp_df.columns.str.contains("sgl")]]))
 
         if first == True:
             df = gp_df
@@ -354,7 +351,7 @@ def writeResultData(dframe, cfg):
     return df
 
 
-def getBSobj(YYYYMMDD, market, cfg):
+def getBSobj(YYYYMMDD, market, cfgname):
     head_info = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
     
     # 上市
@@ -371,12 +368,12 @@ def getBSobj(YYYYMMDD, market, cfg):
     urlwithhead = req.get(url, headers = head_info)
     urlwithhead.encoding = "utf-8"
     # 抓config檔決定是否要產生File
-    genfile = getConfigData(cfg, "genhtml")
+    genfile = cfg.getConfigValue(cfgname, "genhtml")
 
     # 判斷是否要產生File,不產生就直接把BS Obj傳出去
     if genfile != "":
         ## 寫網頁原始碼到檔案中cfg是config檔的路徑及檔名
-        wpath = getConfigData(cfg, "webpath")
+        wpath = cfg.getConfigValue(cfgname, "webpath")
         # 產生出的檔案存下來
         ## 建立目錄,不存在才建...
         if os.path.exists(wpath) == False:
@@ -388,14 +385,14 @@ def getBSobj(YYYYMMDD, market, cfg):
     #傳出BeautifulSoup物件     
     return bs(urlwithhead.text, "lxml")
 
-def getTBobj(bsobj, tbID, market, cfg):
+def getTBobj(bsobj, tbID, market, cfgname):
     tb = bsobj.find_all("table")[tbID]
     # 抓config檔決定是否要產生File
-    genfile = getConfigData(cfg, "genhtml")
+    genfile = cfg.getConfigValue(cfgname, "genhtml")
     # 判斷是否要產生File,不產生就直接把BS Obj傳出去
     if genfile != "":
         ## 寫網頁原始碼到檔案中cfg是config檔的路徑及檔名
-        wpath = getConfigData(cfg, "webpath")
+        wpath = cfg.getConfigValue(cfgname, "webpath")
         # 產生出的檔案存下來
         ## 建立目錄,不存在才建...
         if os.path.exists(wpath) == False:
@@ -410,8 +407,8 @@ def getHeaderLine(tbObj):
         headtext.append(head.text)
     return headtext
 
-def writeLegalPersonDailyStockVolume(marketlist, cfg):
-    fpath = getConfigData(cfg, "dailypath")
+def writeLegalPersonDailyStockVolume(marketlist, cfgname):
+    fpath = cfg.getConfigValue(cfgname, "dailypath")
     if os.path.exists(fpath) == False:
         os.makedirs(fpath)
 
@@ -428,12 +425,12 @@ def writeLegalPersonDailyStockVolume(marketlist, cfg):
         # 表示這次的loop還沒有檢查日期
         if day_check == False:
             # 找出現存的檔案最近的日期[File: DailyVolume_<YYYYMMDD>.csv]
-            file_list = sorted([s for s in os.listdir(fpath) if getConfigData(cfg, "volname") in s], reverse = True)
+            file_list = sorted([s for s in os.listdir(fpath) if cfg.getConfigValue(cfgname, "volname") in s], reverse = True)
             file_last_date = ((file_list[0].split("_"))[1].split("."))[0]
             if file_last_date == ymd:        
-                return print(f"離今天最近的檔案己存在!!({file_list[0]})")
+                return print(f"最近一個交易的檔案己存在!!({file_list[0]})")
             # 準備檔案名
-            volfile = f"{fpath}/" + getConfigData(cfg, "volname") + f"_{ymd}.csv"
+            volfile = f"{fpath}/" + cfg.getConfigValue(cfgname, "volname") + f"_{ymd}.csv"
             day_check = True
         # 取得表頭(只用上市的表頭就好)
         if mkt == "TSE":
@@ -467,42 +464,39 @@ def writeLegalPersonDailyStockVolume(marketlist, cfg):
 # 取得歷史tick資料
 
 
-def getStockticks(api, StockID, date_signal):
-    stock = api.Contracts.Stocks[StockID]
-    df_tick = pd.DataFrame({**api.ticks(stock, date_signal)})
-    df_tick.ts = pd.to_datetime(df_tick.ts)
-    return df_tick
+# def getStockticks(api, StockID, date_signal):
+#     stock = api.Contracts.Stocks[StockID]
+#     df_tick = pd.DataFrame({**api.ticks(stock, date_signal)})
+#     df_tick.ts = pd.to_datetime(df_tick.ts)
+#     return df_tick
     
 
-@sj.on_quote
-def quote_callback(topic, quote_msg):
-    print(topic, quote_msg)
+# @sj.on_quote
+# def quote_callback(topic, quote_msg):
+#     print(topic, quote_msg)
 
 
-@sj.on_event
-def event_callback(resp_code, event_code, event):
-    print("Respone Code: {} | Event Code: {} | Event: {}".format(
-        resp_code, event_code, event))
-
-
+# @sj.on_event
+# def event_callback(resp_code, event_code, event):
+#     print("Respone Code: {} | Event Code: {} | Event: {}".format(
+#         resp_code, event_code, event))
 
 
 
-stk_api = connectToServer()
-
-
-stocks = ["TSE", "OTC"]
+markets = ["TSE", "OTC"]
 keyindex = ["SMA", "BBands", "SAR_002", "SAR_003", "maxmin_120", "maxmin_240"]
 # stocks = ["OTC"]
-cfg_fname = r"./config/config.json"
+cfg_fname = "./config/config.json"
 
-stk_info = getStockData(stk_api, stocks, "dataframe")
-stk_list = getStockData(stk_api, stocks, "List")
-writeRawData(stk_api, stk_list, cfg_fname)
-writeLegalPersonDailyStockVolume(stocks, cfg_fname)
+stk_api = con.connectToServer(cfg.getConfigValue(cfg_fname, "login"))
+stk_info = getStockData(stk_api, markets)
+
+writeRawData(stk_api, stk_info, cfg_fname)
+writeLegalPersonDailyStockVolume(markets, cfg_fname)
 
 # 取得每天的成交資料(後面數字是往回抓幾天)
-stk_df = getStockDailyData(stk_list, cfg_fname, 250)
+stk_df = getStockDailyData(stk_info, cfg_fname, 250)
+
 # 取得投信每日買賣超資料
 stk_df = mergeVolumeData(stk_df, cfg_fname)
 # 取得股票資訊
@@ -521,12 +515,14 @@ for k in keyindex:
 
 stk_df  = writeResultData(stk_df, cfg_fname)
 
-
+if stk_df.StockID.count() != stk_info.StockID.count():
+    print(f"觀察清單{stk_info.StockID.count()}和最後結果清單{stk_df.StockID.count()}筆數不一致!!!")
 
 
 
 
 # %%
+
 # stk_api.quote.set_callback(quote_callback)
 # stk_api.quote.set_event_callback(event_callback)
 
@@ -559,15 +555,18 @@ stk_df  = writeResultData(stk_df, cfg_fname)
 
 
 # %%
-stk_api = connectToServer()
-df = getStockticks(stk_api, "2330", "2021-08-06")
-df = df.filter(items = ["ts", "close"]).rename(columns = {"ts": "time", "close": "price"})
-# 設定資料以成交時間欄位為序列索引
-df = df.set_index("time")
-# 以 1 分鐘為單位，進行開高低收重新取樣
-df_1mink = df["price"].resample('1MIN').ohlc()
-df_5mink = df["price"].resample('5MIN').ohlc()
-df_1minkma = df["price"].rolling('1MIN').mean()
-df_5minkma = df["price"].rolling('5MIN').mean()
+# stk_api = connectToServer()
+# df = getStockticks(stk_api, "2330", "2021-08-06")
+# df = df.filter(items = ["ts", "close"]).rename(columns = {"ts": "time", "close": "price"})
+# # 設定資料以成交時間欄位為序列索引
+# df = df.set_index("time")
+# # 以 1 分鐘為單位，進行開高低收重新取樣
+# df_1mink = df["price"].resample('1MIN').ohlc()
+# df_5mink = df["price"].resample('5MIN').ohlc()
+# df_1minkma = df["price"].rolling('1MIN').mean()
+# df_5minkma = df["price"].rolling('5MIN').mean()
 
+# %%
+from datetime import date
+date.today().strftime("%Y-%m-%d")
 # %%
