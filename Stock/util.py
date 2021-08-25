@@ -19,7 +19,7 @@ class con:
         return api
     
     def InsertCA(self, api):
-        api.activate_ca( ca_path = r"C:\ekey\551\J120156413\S\Sinopac.pfx", ca_passwd = "J120156413", person_id = "J120156413" )
+        api.activate_ca( ca_path = r"C:\ekey\551\A12222222\S\Sinopac.pfx", ca_passwd = "A12222222", person_id = "A12222222" )
         return
 
 
