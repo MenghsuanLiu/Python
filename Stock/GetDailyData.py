@@ -190,7 +190,7 @@ def writeLegalPersonDailyVolumeDB(marketlist, cfgname, stk_data):
     # 4.更新資料    
     db.updateDataToDB(tbname, df_vol)
     return
-
+# 把基本資料及量都併進來
 def getStockDailyDataDB(StkDF, cfgname, days):
     dailytable = cfg.getConfigValue(cfgname, "tb_daily")
     StkLst = tuple(StkDF["StockID"].astype(str).to_list())
@@ -249,7 +249,6 @@ def writeResultData(dframe, cfgname):
     # 產生結果的Excel
     file.genFiles(cfgname, df, resultfile, "xlsx")
     return df
-
 
 
 def getBSobj(YYYYMMDD, market, cfgname):
@@ -642,7 +641,7 @@ cfg_fname = "./config/config.json"
 
 stk_api = con.connectToServer(cfg.getConfigValue(cfg_fname, "login"))
 stk_info = getStockData(stk_api, markets)
-
+# %%
 writeRawDataDB(stk_api, stk_info, cfg_fname)
 print("Write Daily Trade Amount!")
 # writeRawDataFile(stk_api, stk_info, cfg_fname)
@@ -673,3 +672,5 @@ stk_df  = writeResultData(stk_df, cfg_fname)
 if stk_df.StockID.count() != stk_info.StockID.count():
     print(f"觀察清單{stk_info.StockID.count()}和最後結果清單{stk_df.StockID.count()}筆數不一致!!!")
 
+
+# %%

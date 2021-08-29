@@ -1,5 +1,6 @@
 {
     "login": "./config/login.json",
+    "ca": "./config/ca.json",
     "filepath": "./data/download_file",
     "bkpath": "./data/backup_file",
     "webpath": "./data/html_file",
@@ -8,5 +9,10 @@
     "volname": "DailyVolume",
     "resultname": "DailyReport",
     "kbarname": "DailyKbar",
-    "genhtml": ""
+    "genhtml": "",
+    "tb_volume": "stock.dailyvolume",
+    "tb_mins": "stock.dailyminsholc",
+    "tb_daily": "stock.dailyholc",
+    "tb_snap": "stock.dailysnapshots",
+    "genData": "X"
 }

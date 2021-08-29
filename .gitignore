@@ -40,3 +40,5 @@ vignettes/*.pdf
 
 Stock/data
 Stock/logs
+Stock/config/ca.json
+Stock/config/login.json

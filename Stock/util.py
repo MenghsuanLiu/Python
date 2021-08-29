@@ -12,15 +12,70 @@ class con:
 
     def connectToServer(loginfile):
         # 登入帳號
-        api = sj.Shioaji(backend = "http", simulation=False)
+        api = sj.Shioaji(backend = "http", simulation = False) 
         with open(loginfile, "r") as f:
             login_cfg = json.loads(f.read())
         api.login(**login_cfg, contracts_timeout = 0)
         return api
     
-    def InsertCA(self, api):
-        api.activate_ca( ca_path = r"C:\ekey\551\A12222222\S\Sinopac.pfx", ca_passwd = "A12222222", person_id = "A12222222" )
-        return
+    def connectToSimServer():
+        # 登入帳號
+        api = sj.Shioaji(simulation = True) 
+        api.login(
+            # PAPIUSER01~PAPIUSER08
+            person_id = "PAPIUSER07", 
+            passwd = "2222", 
+            contracts_cb = lambda security_type: print(f"{repr(security_type)} fetch done.")
+        )
+        return api
+
+    def InsertCAbyConfig(api, cafile):
+        with open(cafile, "r") as f:
+            ca_cfg = json.loads(f.read())
+        remsg = api.activate_ca(**ca_cfg)
+        return print(remsg)
+
+    def InsertCAbyID(api, id):
+        remsg = api.activate_ca(
+                            ca_path = fr"C:\ekey\551\{id}\S\Sinopac.pfx",
+                            ca_passwd = id,
+                            person_id = id,
+)
+        return remsg
+
+    def SetDefaultAccount(api, acctype, name):
+        # acctype => S:股票 F:期貨 H:
+        if name.lower() == "chris":
+            acctid = "0227972"
+        if name.lower() == "lydia":
+            acctid = "0276664"
+        if name.lower() == "amelia":
+            acctid = "0361388"        
+        acct = []
+        i = 0
+        # 取出這個帳號裡面有多少帳戶可以做交易
+        while True:    
+            try:
+                acct.append([api.list_accounts()[i].account_type.value, api.list_accounts()[i].person_id, api.list_accounts()[i].account_id, api.list_accounts()[i].username])
+                i += 1
+            except:
+                break
+        acctDF = pd.DataFrame(acct, columns = ["Type", "ID", "AccountID", "Name"])
+        # 取得帳戶的Index,後面可以設交易帳戶
+        idx = acctDF.index[(acctDF.Type == acctype) & (acctDF.AccountID == acctid)].values[0]
+        # 設定預設交易帳戶
+        api.set_default_account(api.list_accounts()[int(idx)])
+        # 取得身份證字號,然後把慼證餵進去
+        PID = acctDF.ID[(acctDF.Type == acctype) & (acctDF.AccountID == acctid)].values[0]
+        msg = con.InsertCAbyID(api, PID)
+        # 憑證若失敗會跳error message
+        if msg == True:
+            return print(f"目前使用憑證:{PID}成功!!")
+        else:
+            return
+        
+
+
 
 
 class cfg:
