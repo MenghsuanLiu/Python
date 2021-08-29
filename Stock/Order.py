@@ -4,7 +4,7 @@ import os
 import shioaji as sj
 from datetime import date, timedelta, datetime
 from util import con, cfg, file
-# %%
+
 
 def getAttentionStockDF(cfg_file):
     FileLst = os.listdir(cfg.getConfigValue(cfg_file, "bkpath"))
@@ -75,7 +75,7 @@ cfg_fname = "./config/config.json"
 api = con.connectToSimServer()
 # con.SetDefaultAccount(api, "S", "chris")
 # con.InsertCAbyConfig(api,cfg.getConfigValue(cfg_fname, "ca"))
-
+# %%
 stkDF = getAttentionStockDF(cfg_fname)
 # 組合需要每分鐘抓價量的Stocks,同時抓出各股的漲跌停
 contracts, stkDF = getListContractForAPIandLimitValue(api, stkDF)

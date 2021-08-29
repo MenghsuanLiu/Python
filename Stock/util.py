@@ -44,13 +44,9 @@ class con:
         return remsg
 
     def SetDefaultAccount(api, acctype, name):
+        account_cfg = "./config/account.json"
         # acctype => S:股票 F:期貨 H:
-        if name.lower() == "chris":
-            acctid = "0227972"
-        if name.lower() == "lydia":
-            acctid = "0276664"
-        if name.lower() == "amelia":
-            acctid = "0361388"        
+        acctid = cfg.getConfigValue(account_cfg, name.lower())
         acct = []
         i = 0
         # 取出這個帳號裡面有多少帳戶可以做交易
