@@ -226,7 +226,7 @@ def writeResultData(dframe, cfgname):
     # 找出這次資料的最後一筆日期
     df = dframe.sort_values(by = "TradeDate", ascending = False)
     df_ymd = df["TradeDate"].head(1).values[0].strftime("%Y%m%d")
-    resultfile = cfg.getConfigValue(cfgname, "bkpath") + "/" + cfg.getConfigValue(cfgname, "resultname") + f"_{df_ymd}.xlsx"
+    resultfile = cfg.getConfigValue(cfgname, "dailypath") + "/" + cfg.getConfigValue(cfgname, "resultname") + f"_{df_ymd}.xlsx"
     
     # 找到資料然後搬到Backup
     # files = os.listdir(cfg.getConfigValue(cfgname, "filepath"))
@@ -641,7 +641,7 @@ cfg_fname = "./config/config.json"
 
 stk_api = con.connectToServer(cfg.getConfigValue(cfg_fname, "login"))
 stk_info = getStockData(stk_api, markets)
-# %%
+
 writeRawDataDB(stk_api, stk_info, cfg_fname)
 print("Write Daily Trade Amount!")
 # writeRawDataFile(stk_api, stk_info, cfg_fname)

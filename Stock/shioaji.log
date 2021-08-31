@@ -50,3 +50,5 @@
 [E 2021-08-19 09:00:04,256 D:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {}
 [E 2021-08-28 22:15:12,108 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'token': '', 'accounts': [], 'detail': 'ORA-20003: customer_not_exist\nORA-06512: at "STSTX.SGTP_LOGIN_G", line 397\nORA-06512: at line 1', 'ip_address': '60.250.206.5', 'client_name': ''}}
 [E 2021-08-28 22:57:16,002 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {}
+[E 2021-08-29 22:08:28,406 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {}
+[E 2021-08-29 22:09:05,127 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {}
