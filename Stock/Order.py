@@ -9,7 +9,7 @@ from util import con, cfg, file
 success = []
 successDF = pd.DataFrame()
 def getAttentionStockDF(cfg_file):
-    FileLst = os.listdir(cfg.getConfigValue(cfg_file, "bkpath"))
+    FileLst = os.listdir(cfg.getConfigValue(cfg_file, "dailypath"))
     matching = []
     i = 0
     while True:
@@ -19,7 +19,7 @@ def getAttentionStockDF(cfg_file):
         Fmatch = [s for s in FileLst if Fname in s]
         i += 1
         if Fmatch !=[]:
-            Ffullpath = cfg.getConfigValue(cfg_file, "bkpath") + "/" + cfg.getConfigValue(cfg_file, "resultname") + f"_{TradeDate}.xlsx"
+            Ffullpath = cfg.getConfigValue(cfg_file, "dailypath") + "/" + cfg.getConfigValue(cfg_file, "resultname") + f"_{TradeDate}.xlsx"
             break
 
     stkDF = pd.read_excel(Ffullpath)
@@ -96,8 +96,8 @@ def normalStockBuy(api, stockid, buyprice, qty):
     return
 
 def placeOrderCallBack(stat, msg):
-    success.append([stat.TFTDeal])
-    successDF.append(pd.DataFrame({**stat.TFTDeal}))
+    success.append([stat])
+    successDF.append(pd.DataFrame({**stat}))
     # print(stat, msg)
 
 
@@ -111,9 +111,10 @@ cfg_fname = "./config/config.json"
 api = con.connectToSimServer()
 # con.SetDefaultAccount(api, "S", "chris")
 # con.InsertCAbyConfig(api,cfg.getConfigValue(cfg_fname, "ca"))
-# %%
+
 stkDF = getAttentionStockDF(cfg_fname)
 # 組合需要抓價量的Stocks,同時抓出各股的漲跌停
+# %%
 contracts = getListContractForAPI(api, stkDF)
 # 取得開盤後5min的OHLC的值(測試時需要建一個時間)
 exetime = (datetime.now() + timedelta(minutes = 1)).strftime("%H:%M:%S")

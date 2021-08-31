@@ -162,7 +162,7 @@ stkDF = getAttentionStockDF(cfg_fname)
 
 # 組合需要每分鐘抓價量的Stocks
 contracts = getListContractForAPI(api, stkDF)
-
+# %%
 # 1.5min決定買的清單
 # 取得開盤後5min的OHLC的值(測試時需要建一個時間)
 # exetime = (datetime.now() + timedelta(minutes = 1)).strftime("%H:%M:%S")
