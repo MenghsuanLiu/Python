@@ -52,3 +52,8 @@
 [E 2021-08-28 22:57:16,002 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {}
 [E 2021-08-29 22:08:28,406 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {}
 [E 2021-08-29 22:09:05,127 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {}
+[E 2021-09-06 20:45:57,590 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'detail': '已取消的預約單', 'sts_code': 75006}}
+[E 2021-09-06 20:49:02,646 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'detail': '已取消的預約單', 'sts_code': 75006}}
+[E 2021-09-06 20:54:14,653 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-09-06 20:55:12,845 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-09-06 20:55:53,435 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}

@@ -89,6 +89,10 @@ class cfg:
         return val
 
 class db:
+    def __init__(self):
+        self.user = "root"
+        self.pwd = "670325"
+
     def mySQLconn(dbname, fn):
         db_usr = "root"
         db_pwd = "670325"

@@ -96,9 +96,9 @@ def normalStockBuy(api, stockid, buyprice, qty):
     return
 
 def placeOrderCallBack(stat, msg):
-    success.append([stat])
-    successDF.append(pd.DataFrame({**stat}))
-    # print(stat, msg)
+    success.append(msg)
+    # successDF.append(pd.DataFrame({**stat}))
+    print(stat, msg)
 
 
 
@@ -106,19 +106,22 @@ def placeOrderCallBack(stat, msg):
 
 cfg_fname = "./config/config.json"
 
+
+
 # 1.連接Server,指定帳號,同時active憑證
 # api = con.connectToServer(cfg.getConfigValue(cfg_fname, "login"))
 api = con.connectToSimServer()
 # con.SetDefaultAccount(api, "S", "chris")
 # con.InsertCAbyConfig(api,cfg.getConfigValue(cfg_fname, "ca"))
+api.set_order_callback(placeOrderCallBack)
 
 stkDF = getAttentionStockDF(cfg_fname)
 # 組合需要抓價量的Stocks,同時抓出各股的漲跌停
 # %%
 contracts = getListContractForAPI(api, stkDF)
 # 取得開盤後5min的OHLC的值(測試時需要建一個時間)
-exetime = (datetime.now() + timedelta(minutes = 1)).strftime("%H:%M:%S")
-# exetime = "09:05:00"
+# exetime = (datetime.now() + timedelta(minutes = 1)).strftime("%H:%M:%S")
+exetime = "09:05:00"
 DF_SnapShot_5 = get5minSnapshotOLHC(api, contracts, exetime)
 
 
@@ -134,16 +137,17 @@ if not BuyDF.empty:
         a += 1
         if a == 10:
             break
-api.set_order_callback(placeOrderCallBack)
-# %%
+
+
 # 盤中9:00~13:30 => 270 mins
 # for i in range(0, 531):
-for i in range(0, 300):
+for i in range(0, 30):
     # 更新狀態
-    api.update_status()
+    # api.update_status()
     
 
     time.sleep(30)
+# %%
 if success != []:
     df = pd.DataFrame(success)
     file.genFiles(cfg_fname, df, "./data/success_tmp.csv", "csv")

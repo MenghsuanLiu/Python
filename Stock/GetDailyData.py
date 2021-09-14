@@ -4,6 +4,7 @@ import requests as req
 import talib
 import os
 import time
+from talib import abstract
 from datetime import date, timedelta, datetime
 from bs4 import BeautifulSoup as bs
 from util import con, cfg, db, file
@@ -414,6 +415,9 @@ def getSignal(dataframe, tatype):
         dataframe.loc[(dataframe["Close"] <= dataframe[f"min_{tatype[-3:]}"]), colnam] = -1
     return dataframe
 
+# def getStockKD(dframe):
+#     for stockid, gp_df in dframe.groupby("StockID"):
+#         gp_df["KD"] = abstract.STOCH(gp_df)
 
 
 # File的部份目前未使用
@@ -673,4 +677,9 @@ if stk_df.StockID.count() != stk_info.StockID.count():
     print(f"觀察清單{stk_info.StockID.count()}和最後結果清單{stk_df.StockID.count()}筆數不一致!!!")
 
 
+# %%
+filt = {"StockID": "2330"}
+DF_2330 = db.readDataFromDBtoDF("stock.dailyholc", filt).filter(items=["TradeDate", "Open", "High", "Low", "Close", "Volume"]).rename(columns = {"Open": "open", "High": "high", "Low": "low", "Close": "close"})
+# %%
+abstract.STOCH(DF_2330)
 # %%

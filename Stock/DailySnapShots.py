@@ -30,6 +30,8 @@ def getAttentionStockDF(cfg_file):
     # 邏輯: 前一交易日成交價 > 60MA & 10MA,且成交量 >= 5000張 
     stkDF = stkDF.loc[(stkDF.sgl_SMA > 0) & (stkDF.Volume >= 5000)]
     stkDF.StockID = stkDF.StockID.astype(str)
+    basicDF = getStockIndustryCategory(cfg_file)
+    stkDF = stkDF.merge(basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
     return stkDF
 
 def getListContractForAPI(api, STKDF):
@@ -106,11 +108,17 @@ def getBuyTimeAndBuyPrice(BuyDF, SanpShotDF):
         BuyResultDF["Result"] = ""
     return BuyResultDF
 
-def getTradeResuleDF(CarestkDF, BuyDF):
-    TradeDF = CarestkDF.filter(items = ["StockID", "StockName", "上市/上櫃", "Close"]).rename(columns = {"Close": "前一交易收盤"}).merge(BuyDF.filter(items = ["StockID", "Open", "Buy", "BuyTime", "Sell", "SellTime", "Result"]), on = ["StockID"], how = "left" )
+def getTradeResultDF(CarestkDF, BuyDF):
+    TradeDF = CarestkDF.filter(items = ["StockID", "StockName", "上市/上櫃", "cateDesc", "Close"]).rename(columns = {"Close": "前一交易收盤", "cateDesc": "產業別" }).merge(BuyDF.filter(items = ["StockID", "Open", "Buy", "BuyTime", "Sell", "SellTime", "Result"]), on = ["StockID"], how = "left" )
     TradeDF["獲利狀況"] = TradeDF["Sell"] - TradeDF["Buy"]
     TradeDF.loc["Total"]= TradeDF.sum(numeric_only = True, axis = 0, skipna = True)
     return TradeDF
+
+def getStockIndustryCategory(cfg_file):
+    basicDF = db.readDataFromDBtoDF(cfg.getConfigValue(cfg_file, "tb_basic"), "").filter(items = ["StockID", "categoryID"]).rename(columns = {"categoryID": "cateID"})
+    cateDF = db.readDataFromDBtoDF(cfg.getConfigValue(cfg_file, "tb_ind"), "").filter(items = ["cateID", "cateDesc"])
+    basicDF = basicDF.merge(cateDF, on = "cateID", how = "left")
+    return basicDF
 
 
 
@@ -159,7 +167,6 @@ newfile = cfg.getConfigValue(cfg_fname, "filepath") + "/MinsData_" + date.today(
 # 取得前一交易日的關注清單
 
 stkDF = getAttentionStockDF(cfg_fname)
-
 # 組合需要每分鐘抓價量的Stocks
 contracts = getListContractForAPI(api, stkDF)
 # %%
@@ -205,8 +212,8 @@ for i in range(11, 541):
     else:
         time.sleep(30 - int(datetime.now().strftime("%S")))
 
-R0_TradeDF = getTradeResuleDF(stkDF, R0_BuyDF)
-R1_TradeDF = getTradeResuleDF(stkDF, R1_BuyDF)
+R0_TradeDF = getTradeResultDF(stkDF, R0_BuyDF)
+R1_TradeDF = getTradeResultDF(stkDF, R1_BuyDF)
 # %%
 trade = cfg.getConfigValue(cfg_fname, "tradepath")
 R0_tdfile = f"{trade}/Trade_{ymd}_R0.xlsx"
