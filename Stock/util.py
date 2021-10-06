@@ -3,12 +3,42 @@ import json
 import sqlalchemy
 import pymysql
 import pandas as pd
+from datetime import datetime
 
+cfg_file = "./config/config.json"
+class con: 
+    def __init__(self) -> None:
+        self.simulation = True  # 是否為測試環境
+        self.id = "PAPIUSER07"
+        self.pwd = "2222"
+        self.api = None
+        self.loginfile = cfg.getConfigValue(cfg_file, "login")
 
-class con:
-    # def __init__(self, user, pwd):
-    #     self.db_user = user
-    #     self.db_pwd = pwd
+    def LoginToServer(self, sim = True, id = None, pwd = None):
+        if id and pwd:
+            self.id = id
+            self.pwd = pwd
+
+        try:
+            # 登入 shioaji
+            self.api = sj.Shioaji(simulation = sim)
+            if sim == False:
+                with open(self.loginfile, "r") as f:
+                    login_cfg = json.loads(f.read())
+                    self.api.login(**login_cfg, contracts_timeout = 0)
+                return print("Login Actural Environment Success!!")
+            else:
+                self.api.login(person_id = self.id, passwd = self.pwd)
+                return print(f"Login Simulation Environment({self.id}) Success")
+        except Exception as exc:
+            return print(f"id = {self.id}, pwd = {self.pwd}...{exc}") 
+    
+    def SubscribeTick(self, contract):
+        self.api.quote.subscribe(contract, quote_type = sj.constant.QuoteType.Tick)
+
+    def UnsubscribeTick(self, contract):
+        self.api.quote.unsubscribe(contract, quote_type=sj.constant.QuoteType.Tick)
+
 
     def connectToServer(loginfile):
         # 登入帳號
@@ -23,7 +53,7 @@ class con:
         api = sj.Shioaji(simulation = True) 
         api.login(
             # PAPIUSER01~PAPIUSER08
-            person_id = "PAPIUSER07", 
+            person_id = "PAPIUSER06", 
             passwd = "2222", 
             contracts_cb = lambda security_type: print(f"{repr(security_type)} fetch done.")
         )
@@ -40,7 +70,7 @@ class con:
                             ca_path = fr"C:\ekey\551\{id}\S\Sinopac.pfx",
                             ca_passwd = id,
                             person_id = id,
-)
+                        )
         return remsg
 
     def SetDefaultAccount(api, acctype, name):
@@ -69,10 +99,6 @@ class con:
             return print(f"目前使用憑證:{PID}成功!!")
         else:
             return
-        
-
-
-
 
 class cfg:
     # def __init__(self, cfgfile):
@@ -89,9 +115,9 @@ class cfg:
         return val
 
 class db:
-    def __init__(self):
-        self.user = "root"
-        self.pwd = "670325"
+    # def __init__(self):
+    #     self.user = "root"
+    #     self.pwd = "670325"
 
     def mySQLconn(dbname, fn):
         db_usr = "root"
@@ -156,7 +182,7 @@ class db:
             else:
                 return pd.read_sql(f"SELECT * FROM {tbfullname} WHERE {col} IN {value}", con = db_con)
 
-class  file:
+class file:
     def genFiles(cfgname, df, filename, ftype):
         gen = cfg.getConfigValue(cfgname, "genData")
         if gen.lower() == "x":
@@ -165,3 +191,5 @@ class  file:
             if ftype.lower() == "xlsx":
                 df.to_excel(filename, index = False)
         return
+
+

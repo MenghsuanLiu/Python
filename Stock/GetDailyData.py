@@ -4,7 +4,7 @@ import requests as req
 import talib
 import os
 import time
-from talib import abstract
+# from talib import abstract
 from datetime import date, timedelta, datetime
 from bs4 import BeautifulSoup as bs
 from util import con, cfg, db, file
@@ -382,6 +382,18 @@ def getStockMACD(dframe, day_list):
             df = df.append(gp_df)     
     return df
 
+# RSI計算=>https://www.moneydj.com/kmdj/wiki/wikiviewer.aspx?keyid=f2aa7c2e-f6b5-447f-b5b7-d77572aa4724
+def getStockRSI(dframe, day_list):
+    DFrsi = pd.DataFrame()
+    for stockid, gp_df in dframe.groupby("StockID"):
+        if type(day_list) is int:
+            gp_df[f"RSI_{day_list}"] = talib.RSI(gp_df.Close, timeperiod = day_list)
+        else:
+            for rsidays in day_list:
+                gp_df[f"RSI_{rsidays}"] = talib.RSI(gp_df.Close, timeperiod = rsidays)
+        DFrsi = DFrsi.append(gp_df)
+    return DFrsi
+
 def getSignal(dataframe, tatype):
     colnam = f"sgl_{tatype}"
     dataframe[colnam] = 0
@@ -413,6 +425,10 @@ def getSignal(dataframe, tatype):
     if tatype[0:6].lower() == "maxmin":
         dataframe.loc[(dataframe["Close"] >= dataframe[f"max_{tatype[-3:]}"]), colnam] = 1
         dataframe.loc[(dataframe["Close"] <= dataframe[f"min_{tatype[-3:]}"]), colnam] = -1
+    # 短天期的RSI由下往上突破長天期的RSI線時，表示走勢有轉而增強的跡象，可以考慮買進。反之若短天期的RSI由上往下突破時，則走勢轉弱，考慮賣出    
+    if tatype.lower() == "rsi":
+        dataframe.loc[(dataframe.RSI_6 > dataframe.RSI_12), colnam] = 1
+        dataframe.loc[(dataframe.RSI_6 > dataframe.RSI_12), colnam] = -1
     return dataframe
 
 # def getStockKD(dframe):
@@ -639,7 +655,7 @@ def mergeVolumeDataFile(dframe, cfgname):
 
 
 markets = ["TSE", "OTC"]
-keyindex = ["SMA", "BBands", "SAR_002", "SAR_003", "maxmin_120", "maxmin_240"]
+keyindex = ["SMA", "BBands", "SAR_002", "SAR_003", "maxmin_120", "maxmin_240", "RSI"]
 # stocks = ["OTC"]
 cfg_fname = "./config/config.json"
 
@@ -667,6 +683,7 @@ stk_df = getStockBBands(stk_df, 10, 2)
 stk_df = getStockSAR(stk_df, 0.02, 0.2)
 stk_df = getStockSAR(stk_df, 0.03, 0.3)
 stk_df = getStockMaxMin(stk_df, [120, 240], ["max", "min"])
+stk_df = getStockRSI(stk_df, [6, 12])
 
 for k in keyindex:
     stk_df = getSignal(stk_df, k)
@@ -677,9 +694,5 @@ if stk_df.StockID.count() != stk_info.StockID.count():
     print(f"觀察清單{stk_info.StockID.count()}和最後結果清單{stk_df.StockID.count()}筆數不一致!!!")
 
 
-# %%
-filt = {"StockID": "2330"}
-DF_2330 = db.readDataFromDBtoDF("stock.dailyholc", filt).filter(items=["TradeDate", "Open", "High", "Low", "Close", "Volume"]).rename(columns = {"Open": "open", "High": "high", "Low": "low", "Close": "close"})
-# %%
-abstract.STOCH(DF_2330)
+
 # %%

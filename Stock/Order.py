@@ -2,12 +2,18 @@
 import pandas as pd
 import os
 import time
-# import shioaji as sj
+import shioaji as sj
+from shioaji import constant
 from datetime import date, timedelta, datetime
 from util import con, cfg, file
 
-success = []
-successDF = pd.DataFrame()
+# t = con()
+# # t.LoginToServer(sim = False)
+# t.LoginToServer(sim = False)
+
+
+order = []
+deal = []
 def getAttentionStockDF(cfg_file):
     FileLst = os.listdir(cfg.getConfigValue(cfg_file, "dailypath"))
     matching = []
@@ -24,7 +30,7 @@ def getAttentionStockDF(cfg_file):
 
     stkDF = pd.read_excel(Ffullpath)
     # 邏輯: 前一交易日成交價 > 60MA & 10MA,且成交量 >= 5000張 
-    stkDF = stkDF.loc[(stkDF.sgl_SMA > 0) & (stkDF.Volume >= 5000)]
+    stkDF = stkDF.loc[(stkDF.sgl_SMA > 0) & (stkDF.Volume >= 5000) & (stkDF.sgl_SAR_002 > 0)]
     stkDF.StockID = stkDF.StockID.astype(str)
     return stkDF
 
@@ -95,24 +101,37 @@ def normalStockBuy(api, stockid, buyprice, qty):
     api.place_order(Ctract, order)
     return
 
-def placeOrderCallBack(stat, msg):
-    success.append(msg)
-    # successDF.append(pd.DataFrame({**stat}))
-    print(stat, msg)
+def placeOrderCallBack(order_state: constant.OrderState, order: dict):
+    item = []
+    if order_state == sj.constant.OrderState.TFTOrder: 
+        item.append(order["contract"]["code"])
+        item.append(order["order"]["action"])
+        item.append(order["order"]["price"])
+        item.append(order["order"]["quantity"])
+        item.append(order["order"]["order_type"])
+        item.append(order["order"]["price_type"])
+        item.append(order["status"]["exchange_ts"])
+        order.append(item)
+    if order_state == sj.constant.OrderState.TFTDeal:
+        item.append(order["code"])
+        item.append(order["price"])
+        item.append(order["quantity"])
+        item.append(order["ts"])
+        deal.append(item)
 
 
 
-
+# %%
 
 cfg_fname = "./config/config.json"
 
 
 
 # 1.連接Server,指定帳號,同時active憑證
-# api = con.connectToServer(cfg.getConfigValue(cfg_fname, "login"))
-api = con.connectToSimServer()
-# con.SetDefaultAccount(api, "S", "chris")
-# con.InsertCAbyConfig(api,cfg.getConfigValue(cfg_fname, "ca"))
+api = con.connectToServer(cfg.getConfigValue(cfg_fname, "login"))
+# api = con.connectToSimServer()
+con.SetDefaultAccount(api, "S", "chris")
+con.InsertCAbyConfig(api,cfg.getConfigValue(cfg_fname, "ca"))
 api.set_order_callback(placeOrderCallBack)
 
 stkDF = getAttentionStockDF(cfg_fname)
@@ -133,27 +152,35 @@ a = 0
 if not BuyDF.empty:
     BuyLst = BuyDF.StockID.astype(str).tolist()
     for id in BuyLst:
-        normalStockBuy(api, id, "up", 1)
+        normalStockBuy(api, id, "down", 1)
         a += 1
-        if a == 10:
+        if a == 3:
             break
 
 
 # 盤中9:00~13:30 => 270 mins
 # for i in range(0, 531):
-for i in range(0, 30):
+# %%
+for i in range(0, 150):
     # 更新狀態
     # api.update_status()
-    
+    time.sleep(60)
 
-    time.sleep(30)
-# %%
-if success != []:
-    df = pd.DataFrame(success)
-    file.genFiles(cfg_fname, df, "./data/success_tmp.csv", "csv")
+if order != []:
+    col = ["StockID", "Action", "Price", "Qty", "OrderType", "PriceType", "ts"]
+    orderDF = pd.DataFrame(order, columns = col)
+    orderDF["TradeDate"] = pd.to_datetime(orderDF.ts).apply(lambda x: x.strftime("%Y%m%d"))
+    orderDF["TradeTime"] = pd.to_datetime(orderDF.ts).dt.time
+    file.genFiles(cfg_fname, orderDF, "./data/order.xlsx", "xlsx")
 
-if not successDF.empty:
-    file.genFiles(cfg_fname, successDF, "./data/successDF_tmp.csv", "csv")   
+if deal != []:
+    col = ["StockID", "Price", "Qty", "ts"]
+    dealDF = pd.DataFrame(deal, columns = col)
+    dealDF["TradeDate"] = pd.to_datetime(dealDF.ts).apply(lambda x: x.strftime("%Y%m%d"))
+    dealDF["TradeTime"] = pd.to_datetime(dealDF.ts).dt.time
+    file.genFiles(cfg_fname, dealDF, "./data/deal.xlsx", "xlsx")
+
+
 # # %%
 # i = 0
 # df_order = pd.DataFrame()
@@ -230,3 +257,4 @@ if not successDF.empty:
 
 # # 庫存資料轉DF
 # pd.DataFrame(api.list_positions(api.stock_account))
+# %%

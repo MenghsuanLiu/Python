@@ -57,3 +57,28 @@
 [E 2021-09-06 20:54:14,653 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
 [E 2021-09-06 20:55:12,845 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
 [E 2021-09-06 20:55:53,435 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-09-27 13:22:00,483 D:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {}
+[E 2021-10-02 11:01:14,282 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-02 11:01:59,226 d:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-02 11:01:59,248 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-03 09:06:49,160 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'token': '', 'accounts': [], 'detail': 'ORA-20003: customer_not_exist\nORA-06512: at "STSTX.SGTP_LOGIN_G", line 395\nORA-06512: at line 1', 'ip_address': '60.250.206.6', 'client_name': ''}}
+[E 2021-10-04 09:05:00,183 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-04 09:05:00,442 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-04 09:05:00,458 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-04 09:05:00,489 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-04 09:05:00,505 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-04 09:05:00,551 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-04 09:05:00,583 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-04 09:05:00,598 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-04 09:05:00,629 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-04 09:05:00,645 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-05 09:05:00,144 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-05 09:05:00,347 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-05 09:05:00,363 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-05 09:05:00,379 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-05 09:05:00,394 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-05 09:05:00,410 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-05 09:05:00,425 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-05 09:05:00,441 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-05 09:05:00,472 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+[E 2021-10-05 09:05:00,503 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}

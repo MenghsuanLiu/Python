@@ -28,7 +28,8 @@ def getAttentionStockDF(cfg_file):
     #     break
     stkDF = pd.read_excel(filefullpath)
     # 邏輯: 前一交易日成交價 > 60MA & 10MA,且成交量 >= 5000張 
-    stkDF = stkDF.loc[(stkDF.sgl_SMA > 0) & (stkDF.Volume >= 5000)]
+    # stkDF = stkDF.loc[(stkDF.sgl_SMA > 0) & (stkDF.Volume >= 5000)]
+    stkDF = stkDF.loc[(stkDF.sgl_SMA > 0) & (stkDF.Volume >= 5000) & (stkDF.sgl_SAR_002 > 0)]
     stkDF.StockID = stkDF.StockID.astype(str)
     basicDF = getStockIndustryCategory(cfg_file)
     stkDF = stkDF.merge(basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
