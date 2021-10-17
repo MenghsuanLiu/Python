@@ -1,46 +1,10 @@
 # %%
 import pandas as pd
 import time
-import os
-from datetime import date, timedelta, datetime
-from util import con, cfg, db, file
+from datetime import date, datetime
+from util import con, cfg, file, stg, tool, db
 
 
-
-
-def getAttentionStockDF(cfg_file):
-    filelst = os.listdir(cfg.getConfigValue(cfg_file, "dailypath"))
-    # matching = [s for s in files if cfg.getConfigValue(cfg_file, "resultname") in s]
-    matching = []
-    i = 0
-    while True:
-        # 算出最近有資料的那一天
-        Dexist_date = (date.today() - timedelta(days = i)).strftime("%Y%m%d")
-        fname = cfg.getConfigValue(cfg_file, "resultname") + f"_{Dexist_date}.xlsx"
-        matching = [s for s in filelst if fname in s]
-        i += 1
-        if matching !=[]:
-            filefullpath = cfg.getConfigValue(cfg_file, "dailypath") + "/" + cfg.getConfigValue(cfg_file, "resultname") + f"_{Dexist_date}.xlsx"
-            break
-
-    # for file in matching:
-    #     filefullpath = cfg.getConfigValue(cfg_file, "filepath") + f"/{file}"
-    #     break
-    stkDF = pd.read_excel(filefullpath)
-    # 邏輯: 前一交易日成交價 > 60MA & 10MA,且成交量 >= 5000張 
-    # stkDF = stkDF.loc[(stkDF.sgl_SMA > 0) & (stkDF.Volume >= 5000)]
-    stkDF = stkDF.loc[(stkDF.sgl_SMA > 0) & (stkDF.Volume >= 5000) & (stkDF.sgl_SAR_002 > 0)]
-    stkDF.StockID = stkDF.StockID.astype(str)
-    basicDF = getStockIndustryCategory(cfg_file)
-    stkDF = stkDF.merge(basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
-    return stkDF
-
-def getListContractForAPI(api, STKDF):
-    stkLst = STKDF["StockID"].astype(str).tolist()
-    cts = []
-    for stk in stkLst:
-        cts.append(api.Contracts.Stocks[stk])
-    return cts
 
 def checkPriceToSell(invDF, min_data, last_flg):
     # 有庫存真實資料要換掉
@@ -72,31 +36,6 @@ def checkPriceToSell(invDF, min_data, last_flg):
     if not sold_InvDF.empty:
         out_InvDF = pd.concat([out_InvDF, sold_InvDF])
     return out_InvDF.sort_values(by = ["StockID"]), ""
-# def StockDefaultAccount(id):
-
-def getminSnapshot(api, Contract): 
-    minDF = pd.DataFrame(api.snapshots(Contract)).filter(items = ["code", "ts", "open", "high", "low", "close", "volume" ]).rename(columns = {"code": "StockID", "ts": "DateTime", "open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"})
-    minDF.DateTime = pd.to_datetime(minDF.DateTime)
-    minDF["TradeDate"] = pd.to_datetime(minDF.DateTime).dt.strftime("%Y%m%d")
-    minDF["TradeTime"] = pd.to_datetime(minDF.DateTime).dt.time
-    minDF["SnapShotTime"] = datetime.now().strftime("%H:%M:%S")
-    minDF.StockID = minDF.StockID.astype(str)
-    return minDF
-
-def getBuyStockDF(FocusDF, SanpShotDF, Rule):
-    BuyDF = pd.DataFrame()
-    # HoldDF = pd.DataFrame()
-    MergeDF = FocusDF.filter(items = ["StockID", "StockName", "上市/上櫃", "Close"]).merge(SanpShotDF.filter(items = ["StockID", "Open", "High", "Close"]).rename(columns = {"Close": "5minClose"}), on = ["StockID"], how = "left")
-
-    MergeDF["BuyFlag"] = ""
-    if Rule == "R0":
-        MergeDF.loc[(MergeDF["5minClose"] < MergeDF["Close"] * 1.05), "BuyFlag"] = "X"
-    if Rule == "R1":
-        # a.5min價 < 前一交易收盤價+5% b.5min價 >= 開盤價(紅K) c.5min價>= 最高價*(1 - 0.01)
-        MergeDF.loc[(MergeDF["5minClose"] < MergeDF["Close"] * 1.05) & (MergeDF["5minClose"] >= MergeDF["Open"]) & (MergeDF["5minClose"] >= MergeDF["High"] * (1 - 0.01)), "BuyFlag"] = "X"    
-    BuyDF = MergeDF.loc[MergeDF.BuyFlag == "X"]
-    # HoldDF = MergeDF.loc[MergeDF.BuyFlag == ""]
-    return BuyDF.drop(columns = ["BuyFlag", "High", "5minClose", "Close"])
 
 def getBuyTimeAndBuyPrice(BuyDF, SanpShotDF):
     if not BuyDF.empty:
@@ -109,19 +48,21 @@ def getBuyTimeAndBuyPrice(BuyDF, SanpShotDF):
         BuyResultDF["Result"] = ""
     return BuyResultDF
 
-def getTradeResultDF(CarestkDF, BuyDF):
+def getTradeResultDF(CarestkDF, BuyDF, Strategy):
     TradeDF = CarestkDF.filter(items = ["StockID", "StockName", "上市/上櫃", "cateDesc", "Close"]).rename(columns = {"Close": "前一交易收盤", "cateDesc": "產業別" }).merge(BuyDF.filter(items = ["StockID", "Open", "Buy", "BuyTime", "Sell", "SellTime", "Result"]), on = ["StockID"], how = "left" )
     TradeDF["獲利狀況"] = TradeDF["Sell"] - TradeDF["Buy"]
+
+    insertDF = TradeDF.filter(items = ["StockID", "前一交易收盤", "Open", "Buy", "BuyTime", "Sell", "SellTime", "獲利狀況"]).rename(columns = {"前一交易收盤": "LastClose", "獲利狀況": "Result"})
+    insertDF.insert(0, "Strategy", str(Strategy))
+    insertDF.insert(2, "TradeDate", date.today().strftime("%Y%m%d"))
+
     TradeDF.loc["Total"]= TradeDF.sum(numeric_only = True, axis = 0, skipna = True)
+    try:
+        db().updateDFtoDB(insertDF, tb_name = "dailysimulation")
+    except:
+        pass
+
     return TradeDF
-
-def getStockIndustryCategory(cfg_file):
-    basicDF = db.readDataFromDBtoDF(cfg.getConfigValue(cfg_file, "tb_basic"), "").filter(items = ["StockID", "categoryID"]).rename(columns = {"categoryID": "cateID"})
-    cateDF = db.readDataFromDBtoDF(cfg.getConfigValue(cfg_file, "tb_ind"), "").filter(items = ["cateID", "cateDesc"])
-    basicDF = basicDF.merge(cateDF, on = "cateID", how = "left")
-    return basicDF
-
-
 
 def collectBuyOrderDataRule1(stkDF, min5_data):
     # 1.排序這5 mins的資料
@@ -158,45 +99,50 @@ def collectBuyOrderDataRule0(stkDF, min5_data):
     
 
 
-cfg_fname = "./config/config.json"
+# cfg_fname = "./config/config.json"
 ymd = date.today().strftime("%Y%m%d")
-api = con.connectToServer(cfg.getConfigValue(cfg_fname, "login"))
+chk_sec = 30
 # 即將產生的檔名
-newfile = cfg.getConfigValue(cfg_fname, "filepath") + "/MinsData_" + date.today().strftime("%Y%m%d") + ".xlsx"
+newfile = cfg().getValueByConfigFile(key = "filepath") + "/MinsData_" + date.today().strftime("%Y%m%d") + ".xlsx"
 
-# InsertCA(api)
-# 取得前一交易日的關注清單
+# 1.取得連線(可以先不用憑證)
+api = con().LoginToServerForStock(simulate = False)
 
-stkDF = getAttentionStockDF(cfg_fname)
-# 組合需要每分鐘抓價量的Stocks
-contracts = getListContractForAPI(api, stkDF)
+# # 2.設定成交即時回報
+# api.set_order_callback(placeOrderCallBack)
+
+# 3.依策略決定下單清單
+stkDF_new = file().getLastFocusStockDF()
+stkDF = pd.DataFrame()
+stkDF = stg(stkDF_new).SMA_SAR002_Volume_MAXMIN120()
+if stkDF.empty:
+    stkDF = stg(stkDF_new).SMA_SAR002_Volume()
+
+
+# 4.組合需要抓價量的Stocks
+contracts = con(api).getContractForAPI(stkDF)
+
+# 5.取得開盤後5min的OHLC的值(測試時會自動立即run)
+minSnapDF = con(api).getAfterOpenTimesSnapshotData(contract = contracts, nmin_run = 5)
+
+# 6.依買的策略產生BuyDF
+# BuyList1 = tool.DFcolumnToList(stg(stkDF).BuyStrategyFromOpenSnapDF_01(minSnapDF), "StockID")
+# BuyList2 = tool.DFcolumnToList(stg(stkDF).BuyStrategyFromOpenSnapDF_02(minSnapDF), "StockID")
+R0_BuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_01(minSnapDF)
+R1_BuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_02(minSnapDF)
+
+# 6.1.下單,取買價及時間(先用5min Close當買價)
+R0_BuyDF = getBuyTimeAndBuyPrice(R0_BuyDF, minSnapDF)
+R1_BuyDF = getBuyTimeAndBuyPrice(R1_BuyDF, minSnapDF)
+
+# 7.30secs後開始檢查賣市價..
+tool.WaitingTimeDecide(chk_sec)
+
+todayDF = minSnapDF
+
 # %%
-# 1.5min決定買的清單
-# 取得開盤後5min的OHLC的值(測試時需要建一個時間)
-# exetime = (datetime.now() + timedelta(minutes = 1)).strftime("%H:%M:%S")
-exetime = "09:05:00"
-while True:
-    if datetime.now().strftime("%H:%M:%S") == exetime:
-        DF_SnapShot_5 = getminSnapshot(api, contracts)
-        break
-
-# 取得買的資料(最後和StkDF Join就知那些沒有買了)
-R0_BuyDF = getBuyStockDF(stkDF, DF_SnapShot_5, "R0")
-R1_BuyDF = getBuyStockDF(stkDF, DF_SnapShot_5, "R1")
-# 2.下單,取買價及時間(先用5min Close當買價)
-R0_BuyDF = getBuyTimeAndBuyPrice(R0_BuyDF, DF_SnapShot_5)
-R1_BuyDF = getBuyTimeAndBuyPrice(R1_BuyDF, DF_SnapShot_5)
-# 3.30secs後開始檢查賣市價..
-if int(datetime.now().strftime("%S")) >= 30:
-    time.sleep(60 - int(datetime.now().strftime("%S")))
-else:
-    time.sleep(30 - int(datetime.now().strftime("%S")))
-
-todayDF = DF_SnapShot_5
-SoldOut = ""
-
 for i in range(11, 541):
-    minDF = getminSnapshot(api, contracts)
+    minDF = con(api).getMinSnapshotData(contracts)
     # 收集今天的Snapshot
     todayDF = todayDF.append(minDF)
     # 每30secs檢查
@@ -207,30 +153,31 @@ for i in range(11, 541):
         R0_BuyDF, SoldOut = checkPriceToSell(R0_BuyDF, minDF, "X")
         R1_BuyDF, SoldOut = checkPriceToSell(R1_BuyDF, minDF, "X")
 
-    # time.sleep(0.2)
-    if int(datetime.now().strftime("%S")) >= 30:
-        time.sleep(60 - int(datetime.now().strftime("%S")))
-    else:
-        time.sleep(30 - int(datetime.now().strftime("%S")))
+    tool.WaitingTimeDecide(chk_sec)
 
-R0_TradeDF = getTradeResultDF(stkDF, R0_BuyDF)
-R1_TradeDF = getTradeResultDF(stkDF, R1_BuyDF)
-# %%
-trade = cfg.getConfigValue(cfg_fname, "tradepath")
+R0_TradeDF = getTradeResultDF(stkDF, R0_BuyDF, "R0")
+R1_TradeDF = getTradeResultDF(stkDF, R1_BuyDF, "R1")
+
+
+# 準備存檔資料
+trade = cfg().getValueByConfigFile(key = "tradepath")
 R0_tdfile = f"{trade}/Trade_{ymd}_R0.xlsx"
 R1_tdfile = f"{trade}/Trade_{ymd}_R1.xlsx"
 
-file.genFiles(cfg_fname, R0_TradeDF, R0_tdfile, "xlsx")
-file.genFiles(cfg_fname, R1_TradeDF, R1_tdfile, "xlsx")
+
+file.GeneratorFromDF(R0_TradeDF, R0_tdfile)
+file.GeneratorFromDF(R1_TradeDF, R1_tdfile)
+# file.genFiles(cfg_fname, R0_TradeDF, R0_tdfile, "xlsx")
+# file.genFiles(cfg_fname, R1_TradeDF, R1_tdfile, "xlsx")
 # %%
 # 每分鐘抓的SnapShot資料存到DB中
-todayDF = todayDF.sort_values(by = ["StockID", "DateTime", "SnapShotTime"])
-SnapDF = todayDF.filter( items = ["StockID", "TradeDate", "TradeTime", "SnapShotTime", "Open", "High", "Low", "Close", "Volume"])
-try:
-    SnapDF = SnapDF.groupby(["StockID", "TradeDate", "TradeTime", "SnapShotTime"], sort = True).agg({"Open": "first", "High": "first", "Low": "first", "Close": "first", "Volume": "first"}).reset_index()
-    db.updateDataToDB(cfg.getConfigValue(cfg_fname, "tb_snap"), SnapDF)
-except:
-    file.genFiles(cfg_fname, todayDF, newfile, "xlsx")
+# todayDF = todayDF.sort_values(by = ["StockID", "DateTime", "SnapShotTime"])
+# SnapDF = todayDF.filter( items = ["StockID", "TradeDate", "TradeTime", "SnapShotTime", "Open", "High", "Low", "Close", "Volume"])
+# try:
+#     SnapDF = SnapDF.groupby(["StockID", "TradeDate", "TradeTime", "SnapShotTime"], sort = True).agg({"Open": "first", "High": "first", "Low": "first", "Close": "first", "Volume": "first"}).reset_index()
+#     db.updateDataToDB(cfg.getConfigValue(cfg_fname, "tb_snap"), SnapDF)
+# except:
+#     file.genFiles(cfg_fname, todayDF, newfile, "xlsx")
 
 
 
@@ -331,3 +278,70 @@ except:
 #     db.updateDataToDB(cfg.getConfigValue(cfg_fname, "tb_snap"), SnapDF)
 # except:
 #     file.genFiles(cfg_fname, todayDF, newfile, "xlsx")
+
+
+# def getAttentionStockDF(cfg_file):
+#     filelst = os.listdir(cfg.getConfigValue(cfg_file, "dailypath"))
+#     # matching = [s for s in files if cfg.getConfigValue(cfg_file, "resultname") in s]
+#     matching = []
+#     i = 0
+#     while True:
+#         # 算出最近有資料的那一天
+#         Dexist_date = (date.today() - timedelta(days = i)).strftime("%Y%m%d")
+#         fname = cfg.getConfigValue(cfg_file, "resultname") + f"_{Dexist_date}.xlsx"
+#         matching = [s for s in filelst if fname in s]
+#         i += 1
+#         if matching !=[]:
+#             filefullpath = cfg.getConfigValue(cfg_file, "dailypath") + "/" + cfg.getConfigValue(cfg_file, "resultname") + f"_{Dexist_date}.xlsx"
+#             break
+
+#     # for file in matching:
+#     #     filefullpath = cfg.getConfigValue(cfg_file, "filepath") + f"/{file}"
+#     #     break
+#     stkDF = pd.read_excel(filefullpath)
+#     # 邏輯: 前一交易日成交價 > 60MA & 10MA,且成交量 >= 5000張 
+#     # stkDF = stkDF.loc[(stkDF.sgl_SMA > 0) & (stkDF.Volume >= 5000)]
+#     stkDF = stkDF.loc[(stkDF.sgl_SMA > 0) & (stkDF.Volume >= 5000) & (stkDF.sgl_SAR_002 > 0)]
+#     stkDF.StockID = stkDF.StockID.astype(str)
+#     basicDF = getStockIndustryCategory(cfg_file)
+#     stkDF = stkDF.merge(basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
+#     return stkDF
+
+# def getListContractForAPI(api, STKDF):
+#     stkLst = STKDF["StockID"].astype(str).tolist()
+#     cts = []
+#     for stk in stkLst:
+#         cts.append(api.Contracts.Stocks[stk])
+#     return cts
+
+# def StockDefaultAccount(id):
+
+# def getminSnapshot(api, Contract): 
+#     minDF = pd.DataFrame(api.snapshots(Contract)).filter(items = ["code", "ts", "open", "high", "low", "close", "volume" ]).rename(columns = {"code": "StockID", "ts": "DateTime", "open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"})
+#     minDF.DateTime = pd.to_datetime(minDF.DateTime)
+#     minDF["TradeDate"] = pd.to_datetime(minDF.DateTime).dt.strftime("%Y%m%d")
+#     minDF["TradeTime"] = pd.to_datetime(minDF.DateTime).dt.time
+#     minDF["SnapShotTime"] = datetime.now().strftime("%H:%M:%S")
+#     minDF.StockID = minDF.StockID.astype(str)
+#     return minDF
+
+# def getBuyStockDF(FocusDF, SanpShotDF, Rule):
+#     BuyDF = pd.DataFrame()
+#     # HoldDF = pd.DataFrame()
+#     MergeDF = FocusDF.filter(items = ["StockID", "StockName", "上市/上櫃", "Close"]).merge(SanpShotDF.filter(items = ["StockID", "Open", "High", "Close"]).rename(columns = {"Close": "5minClose"}), on = ["StockID"], how = "left")
+
+#     MergeDF["BuyFlag"] = ""
+#     if Rule == "R0":
+#         MergeDF.loc[(MergeDF["5minClose"] < MergeDF["Close"] * 1.05), "BuyFlag"] = "X"
+#     if Rule == "R1":
+#         # a.5min價 < 前一交易收盤價+5% b.5min價 >= 開盤價(紅K) c.5min價>= 最高價*(1 - 0.01)
+#         MergeDF.loc[(MergeDF["5minClose"] < MergeDF["Close"] * 1.05) & (MergeDF["5minClose"] >= MergeDF["Open"]) & (MergeDF["5minClose"] >= MergeDF["High"] * (1 - 0.01)), "BuyFlag"] = "X"    
+#     BuyDF = MergeDF.loc[MergeDF.BuyFlag == "X"]
+#     # HoldDF = MergeDF.loc[MergeDF.BuyFlag == ""]
+#     return BuyDF.drop(columns = ["BuyFlag", "High", "5minClose", "Close"])
+
+# def getStockIndustryCategory(cfg_file):
+#     basicDF = db.readDataFromDBtoDF(cfg.getConfigValue(cfg_file, "tb_basic"), "").filter(items = ["StockID", "categoryID"]).rename(columns = {"categoryID": "cateID"})
+#     cateDF = db.readDataFromDBtoDF(cfg.getConfigValue(cfg_file, "tb_ind"), "").filter(items = ["cateID", "cateDesc"])
+#     basicDF = basicDF.merge(cateDF, on = "cateID", how = "left")
+#     return basicDF

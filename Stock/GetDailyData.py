@@ -7,249 +7,232 @@ import time
 # from talib import abstract
 from datetime import date, timedelta, datetime
 from bs4 import BeautifulSoup as bs
-from util import con, cfg, db, file
+from util import con, cfg, db, file, tool, craw
 
 
-
-# 只要上市/上櫃,不要金融, KY股, 股價>=20
-def getStockData(api, stocks):
-    # api.Contracts.Stocks資料結構
-    ## [exchange(市場), code(代碼), symbol(市場+代碼), name(公司名), category(產業分類), unit(1張1000股), limit_up(前一交易日漲停價), limit_down(前一交易日跌停價), reference(前一交易日收盤價), update_date(更新日)]
-    df = []
-    for s in stocks:
-        df_market =[]
-        i = 0
-        # 上市(筆數太多要等一下)
-        if s == "TSE":
-            market = api.Contracts.Stocks.TSE
-            time.sleep(10)
-        # 上櫃    
-        if s == "OTC":
-            market = api.Contracts.Stocks.OTC
-        # 興櫃
-        if s == "OES":  
-            market = api.Contracts.Stocks.OES
-        
-        for id in market:
-            df_market.append({**id})
-        df_market = pd.DataFrame(df_market)
-        # https://members.sitca.org.tw/OPF/K0000/files/F/01/%E8%AD%89%E5%88%B8%E4%BB%A3%E7%A2%BC%E7%B7%A8%E7%A2%BC%E5%8E%9F%E5%89%87.doc分類對照表(17金融)
-        # 不要權證/金融股 / 小於20元
-        df_market = df_market[~df_market["category"].isin(["00", "", "17"]) & ~df_market["name"].str.contains("KY") & ~df_market["name"].str.contains("特")]
-        # df_market = df_market[( df_market["limit_up"] + df_market["limit_down"] ) / 2 >= 20]
-        df_market = df_market[df_market["reference"] >= 20]
-
-
-        while True:
-            date_check = (date.today() - timedelta(days = i)).strftime("%Y/%m/%d")
-            df_check = df_market[df_market["update_date"] == date_check]
-            i += 1
-            if not df_check.empty:
-                df_market = df_check
-                break
-    
-        if s == stocks[0]:
-            df = df_market
-        else:
-            df = df.append(df_market)
-    
-    df = df.filter(items = ["code", "name", "exchange", "category", "update_date"]).rename(columns = {"code": "StockID", "name": "StockName", "exchange": "上市/上櫃"}).replace({"TSE": "上市", "OTC": "上櫃", "OES": "興櫃"})
-    # 下面這段是更新DB用的
-    toDB = df.filter(items = ["StockID", "StockName", "上市/上櫃", "category"]).rename(columns = {"StockName": "Name", "上市/上櫃": "Exchange", "category": "categoryID"})
-    db.updateDataToDB("stock.basicdata", toDB)
-    return df.reset_index(drop = True)
-
-def writeRawDataDB(api, StkDF, cfgname):
-    dailytable = cfg.getConfigValue(cfgname, "tb_daily")
-    minstable = cfg.getConfigValue(cfgname, "tb_mins")
-
-    Stk_list = StkDF["StockID"].astype(str).to_list()
-    # db connection
-    rddb_con = db.mySQLconn(dailytable.split(".")[0], "read")
-    # 抓出Table中最後一筆日期,預設是日期格式,要轉成YYYYMMDD
-    lstdatebyID = pd.read_sql(f"SELECT StockID, MAX(TradeDate) as TradeDate FROM {dailytable} group by StockID", con = rddb_con)
-
-    DFtoDB = pd.DataFrame()
-    DFtoDBmin = pd.DataFrame()
-    for id in Stk_list:
+def writeDailyRawDataDB(api = None, StkDF = None):
+    tb = cfg().getValueByConfigFile(key = "tb_daily")
+    sql = f"SELECT StockID, MAX(TradeDate) as TradeDate FROM {tb} group by StockID"
+    lastday_stocks = db().selectDatatoDF(sql_statment = sql)
+    kBarDF = pd.DataFrame()
+    for index, row in StkDF.iterrows():
+        udate = datetime.strptime(row["update_date"], "%Y/%m/%d").date()
         try:
-            stk_lstdate = lstdatebyID.loc[lstdatebyID.StockID == id, "TradeDate"].values[0]
+            lastday = lastday_stocks.loc[lastday_stocks.StockID == row["StockID"], "TradeDate"].values[0]
         except:
-            stk_lstdate = 0
+            lastday = udate - timedelta(days = 400)
 
-        for i in range(0, 10):
-            # 算出最近有資料的那一天
-            data_date = date.today() - timedelta(days = i)
-            todayDF = pd.DataFrame({**api.kbars(api.Contracts.Stocks[id], start = data_date.strftime("%Y-%m-%d"))})
-            if not todayDF.empty:
-                break    
-        # 若有資料,就抓最後一天+1開始,若沒資料預設約抓一年份的
-        if stk_lstdate != 0:
-            # 資料庫最後日期 >= 最近有資料日期=>表示資料有更新"最近有資料的那一天",就換下一個股票
-            if stk_lstdate >= data_date:
-                continue
-            # 資料庫最後日期 < 最近有資料日期
-            if stk_lstdate < data_date:            
-                d_range = [stk_lstdate + timedelta(days = 1), data_date]
-                # 資料庫最後日期+1 = 最近有資料日期(就把前面抓到的資料放進來)
-                if d_range[0] == d_range[1]:
-                    stkDF = todayDF
-                # 資料庫最後日期+1 < 最近有資料日期(就再取範圍中的資料)    
-                else:
-                    stkDF = pd.DataFrame({**api.kbars(api.Contracts.Stocks[id], start = d_range[0].strftime("%Y-%m-%d"), end = d_range[1].strftime("%Y-%m-%d"))})
-
-        else:    
-            d_range = [data_date - timedelta(days = 400), data_date]
-            stkDF = pd.DataFrame({**api.kbars(api.Contracts.Stocks[id], start = d_range[0].strftime("%Y-%m-%d"), end = d_range[1].strftime("%Y-%m-%d"))})
-
-        # 日期轉換    
-        stkDF["TradeDate"] = pd.to_datetime(stkDF.ts).apply(lambda x: x.strftime("%Y%m%d"))
-        stkDF["TradeTime"] = pd.to_datetime(stkDF.ts).dt.time
-        # 補上StockID
-        stkDF.insert(0, "StockID", str(id))
-        # 依時間排序
-        stkDF = stkDF.sort_values(by = "ts")
-        # 算出當日的值
-        stkDF_Daily = stkDF.groupby(["StockID", "TradeDate"], sort=True).agg({"Open": "first", "High": max, "Low": min, "Close": "last", "Volume": sum}).reset_index()
-        stkDF = stkDF.filter(items = ["StockID",  "TradeDate", "TradeTime", "Open", "High", "Low", "Close", "Volume"])
-        # 把這個股的DF加到Total的DF
-        DFtoDB = DFtoDB.append(stkDF_Daily)
-        DFtoDBmin = DFtoDBmin.append(stkDF)
+        if lastday < udate:
+            DF = con(api).getKarData(stkid = row["StockID"], sdate = (lastday + timedelta(days = 1)).strftime("%Y-%m-%d"), edate = udate.strftime("%Y-%m-%d"))
+            kBarDF = kBarDF.append(DF)
+    # 資料庫有資料 kBarDF就可能是空的       
+    if not kBarDF.empty:
+        kBarDF = kBarDF.filter(items = ["StockID",  "TradeDate", "TradeTime", "Open", "High", "Low", "Close", "Volume"]).drop_duplicates(subset = ["StockID", "TradeDate", "TradeTime"], keep = "first").reset_index()
+        DkBarDF = kBarDF.groupby(["StockID", "TradeDate"], sort=True).agg({"Open": "first", "High": max, "Low": min, "Close": "last", "Volume": sum}).reset_index()
+        # 每日的OHLC資料
+        if not DkBarDF.empty:
+            db().updateDFtoDB(DkBarDF, tb_name = tb)
+        # 每分的OHLC資料
+        if not kBarDF.empty:
+            tb = cfg().getValueByConfigFile(key = "tb_mins")
+            db().updateDFtoDB(kBarDF, tb_name = tb)
     
-    # 寫到stock.dailyholc(不用擔心重覆問題..) 
-    if not DFtoDB.empty: 
-        db.updateDataToDB(dailytable, DFtoDB)
-
-    # 寫到stock.dailyminsholc
-    # 以交易日期做為刪table依據
-    if not DFtoDBmin.empty:
-        condition = {"TradeDate": (data_date.strftime("%Y%m%d"))}
-        db.delDataFromDB(minstable, condition)
-        db.updateDataToDB(minstable, DFtoDBmin)
-    return
-
-def writeLegalPersonDailyVolumeDB(marketlist, cfgname, stk_data):
-    # 0.取得TabName
-    tbname = cfg.getConfigValue(cfgname, "tb_volume")
-
-    day_check = False
-    for mkt in marketlist:
-        # 找出離今天最近日期有值的日期
-        for i in range(0,10):
-            web_ymd = (date.today() - timedelta(days = i)).strftime("%Y%m%d")
+def writeLegalPersonDailyVolumeDB(stkBsData = None):
+    # 取得TabName
+    tb = cfg().getValueByConfigFile(key = "tb_volume")
+    sql = f"SELECT MAX(TradeDate) as TradeDate FROM {tb}"
+    allDF = pd.DataFrame()
+    dailyDF = pd.DataFrame()
+    Head = []
+    ItemData = []
+    try:
+        vol_lastday = db().selectDatatoDF(sql_statment = sql).iloc[0,0]
+        stk_lastday = datetime.strptime(stkBsData.update_date.max(), "%Y/%m/%d").date()
+    except Exception as exc:
+        return print(exc) 
+    # 日期相同,表示db有資料了...Exit
+    if vol_lastday == stk_lastday:
+        return print(f"最近一個交易日的量資料{tb}己存在!!") 
+    # Loop日期,抓資料寫入db
+    while True:
+        vol_lastday += timedelta(days = 1)
+        # 抓出上市/上櫃的List
+        markets = craw().getMarketList()
+        for mkt in markets:
+            ymd = vol_lastday.strftime("%Y%m%d")
+            # 取得網頁物件(沒有值就換下一個市場)
             try:
-                TB_Obj = getTBobj(getBSobj(web_ymd, mkt, cfg), 0, mkt, cfg)
-                break
+                bsobj = craw().getBSobject(YMD = ymd, market = mkt)
+                tbobj = craw().getTBobjectFromBSobject(in_bsobj = bsobj, tbID = 0, market = mkt)
             except:
                 continue
-        # 表示這次的loop還沒有檢查日期
-        if day_check == False:
-            # db connection
-            rddb_con = db.mySQLconn(tbname.split(".")[0], "read")
-            # 抓出Table中最後一筆日期,預設是日期格式,要轉成YYYYMMDD
-            dblast_ymd = pd.read_sql(f"SELECT DISTINCT TradeDate FROM {tbname} WHERE TradeDate = (SELECT MAX(TradeDate) FROM {tbname})", con = rddb_con)
-            dblast_ymd = dblast_ymd.iloc[0,0].strftime("%Y%m%d")
-            # 最後一個交易日和Table最後日期若一致就不用往下走
-            if dblast_ymd == web_ymd:        
-                return print(f"最近一個交易日的量資料{tbname}己存在!!")            
-            # 這個年月日給面寫db用
-            db_ymd = web_ymd
-            day_check = True
-        # 取得表頭(只用上市的表頭就好)
-        if mkt == "TSE":
-            ItemData = []
-            Header = getHeaderLine(TB_Obj)
-        # 取得Item
-        for rows in TB_Obj.select("table > tbody > tr")[0:]:
-            itemlist = []
-            colnum = 0
-            for col in rows.select("td"):
-                colnum += 1
-                if colnum in (1, 2):
-                    val = col.string.strip()
-                else:                
-                    val = int(col.text.replace(",", "").strip())
-                if mkt == "OTC" and colnum in [9, 10, 11, 21, 22]:
-                    continue
-                itemlist.append(val)
-            if  mkt == "OTC":
-                neworder = list(range(0,11)) + [17] + list(range(11,17)) + [18]
-                itemlist = [itemlist[i] for i in neworder]   
-            ItemData.append(itemlist)
-    # 產生DataFrame
-    df_vol = pd.DataFrame(ItemData, columns = Header)
-    # 寫到資料庫(前面有先檢查了...若有資料就離開..日後若不產生file就要檢查db)
+            
+            # Head List是空值,就要取一下(用上市的表頭就好)
+            if Head == [] and mkt == "TSE":
+                Head = craw().getHeaderLine(in_tbobj = tbobj)
+            ItemData = craw().getItemListForMarket(in_tbobj = tbobj, market = mkt)
+            mktDF = pd.DataFrame(ItemData, columns = Head)
+            dailyDF = dailyDF.append(mktDF)
+
+        # # 產生DataFrame(每一日的資料)
+        # df_daily = pd.DataFrame(ItemData, columns = Head)
+        
+        # 1.準備要用的資料及換column name
+        dailyDF = dailyDF.drop(columns = ["證券名稱", "外資自營商買進股數", "外資自營商賣出股數", "外資自營商買賣超股數"]).rename(columns = {"證券代號": "StockID", "外陸資買進股數(不含外資自營商)": "ForeignBuy", "外陸資賣出股數(不含外資自營商)": "ForeignSell", "外陸資買賣超股數(不含外資自營商)": "ForeignBalance", "投信買進股數": "CreditBuy", "投信賣出股數": "CreditSell", "投信買賣超股數": "CreditBalance", "自營商買賣超股數": "SelfTotalBalance", "自營商買進股數(自行買賣)": "SelfBuy", "自營商賣出股數(自行買賣)": "SelfSell", "自營商買賣超股數(自行買賣)": "SelfBalance", "自營商買進股數(避險)": "SelfHedgingBuy", "自營商賣出股數(避險)": "SelfHedgingSell", "自營商買賣超股數(避險)": "SelfHedgingBalance", "三大法人買賣超股數": "LegalPersonBalance"})
+        # 2.放入日期
+        dailyDF.insert(1, "TradeDate", vol_lastday)
+        # 3.把DF放入最後要出去的DF
+        allDF = allDF.append(dailyDF)
+        # 當資料庫的日期累加到api中的日期就離開...
+        if vol_lastday == stk_lastday:
+            break
+    # 留下有關心的股票
+    allDF = pd.merge(allDF, stkBsData.filter(items = ["StockID"]), on = ["StockID"])
+
+    db().updateDFtoDB(allDF, tb_name = tb)
     
-    # 1.準備要用的資料及換column name
-    df_vol = df_vol.drop(columns = ["證券名稱", "外資自營商買進股數", "外資自營商賣出股數", "外資自營商買賣超股數"]).rename(columns = {"證券代號": "StockID", "外陸資買進股數(不含外資自營商)": "ForeignBuy", "外陸資賣出股數(不含外資自營商)": "ForeignSell", "外陸資買賣超股數(不含外資自營商)": "ForeignBalance", "投信買進股數": "CreditBuy", "投信賣出股數": "CreditSell", "投信買賣超股數": "CreditBalance", "自營商買賣超股數": "SelfTotalBalance", "自營商買進股數(自行買賣)": "SelfBuy", "自營商賣出股數(自行買賣)": "SelfSell", "自營商買賣超股數(自行買賣)": "SelfBalance", "自營商買進股數(避險)": "SelfHedgingBuy", "自營商賣出股數(避險)": "SelfHedgingSell", "自營商買賣超股數(避險)": "SelfHedgingBalance", "三大法人買賣超股數": "LegalPersonBalance"})
-    df_vol.insert(1, "TradeDate", db_ymd)
-    # 2.留下有關心的股票
-    df_vol = pd.merge(df_vol, stk_data.filter(items = ["StockID"]), on = ["StockID"])
-    # 3.刪舊資料
-    condition = {"TradeDate": (db_ymd)}
-    db.delDataFromDB(tbname, condition)
-    # 4.更新資料    
-    db.updateDataToDB(tbname, df_vol)
-    return
+
+    # day_check = False
+    # for mkt in marketlist:
+    #     # 找出離今天最近日期有值的日期
+    #     for i in range(0,10):
+    #         web_ymd = (date.today() - timedelta(days = i)).strftime("%Y%m%d")
+    #         try:
+    #             TB_Obj = getTBobj(getBSobj(web_ymd, mkt, cfg), 0, mkt, cfg)
+    #             break
+    #         except:
+    #             continue
+    #     # 表示這次的loop還沒有檢查日期
+    #     if day_check == False:
+    #         # db connection
+    #         rddb_con = db.mySQLconn(tb.split(".")[0], "read")
+    #         # 抓出Table中最後一筆日期,預設是日期格式,要轉成YYYYMMDD
+    #         dblast_ymd = pd.read_sql(f"SELECT DISTINCT TradeDate FROM {tb} WHERE TradeDate = (SELECT MAX(TradeDate) FROM {tb})", con = rddb_con)
+    #         dblast_ymd = dblast_ymd.iloc[0,0].strftime("%Y%m%d")
+    #         # 最後一個交易日和Table最後日期若一致就不用往下走
+    #         if dblast_ymd == web_ymd:        
+    #             return print(f"最近一個交易日的量資料{tb}己存在!!")            
+    #         # 這個年月日給面寫db用
+    #         db_ymd = web_ymd
+    #         day_check = True
+    #     # 取得表頭(只用上市的表頭就好)
+    #     if mkt == "TSE":
+    #         ItemData = []
+    #         Header = getHeaderLine(TB_Obj)
+    #     # 取得Item
+    #     for rows in TB_Obj.select("table > tbody > tr")[0:]:
+    #         itemlist = []
+    #         colnum = 0
+    #         for col in rows.select("td"):
+    #             colnum += 1
+    #             if colnum in (1, 2):
+    #                 val = col.string.strip()
+    #             else:                
+    #                 val = int(col.text.replace(",", "").strip())
+    #             if mkt == "OTC" and colnum in [9, 10, 11, 21, 22]:
+    #                 continue
+    #             itemlist.append(val)
+    #         if  mkt == "OTC":
+    #             neworder = list(range(0,11)) + [17] + list(range(11,17)) + [18]
+    #             itemlist = [itemlist[i] for i in neworder]   
+    #         ItemData.append(itemlist)
+    # # 產生DataFrame
+    # df_vol = pd.DataFrame(ItemData, columns = Header)
+    # # 寫到資料庫(前面有先檢查了...若有資料就離開..日後若不產生file就要檢查db)
+    
+    # # 1.準備要用的資料及換column name
+    # df_vol = df_vol.drop(columns = ["證券名稱", "外資自營商買進股數", "外資自營商賣出股數", "外資自營商買賣超股數"]).rename(columns = {"證券代號": "StockID", "外陸資買進股數(不含外資自營商)": "ForeignBuy", "外陸資賣出股數(不含外資自營商)": "ForeignSell", "外陸資買賣超股數(不含外資自營商)": "ForeignBalance", "投信買進股數": "CreditBuy", "投信賣出股數": "CreditSell", "投信買賣超股數": "CreditBalance", "自營商買賣超股數": "SelfTotalBalance", "自營商買進股數(自行買賣)": "SelfBuy", "自營商賣出股數(自行買賣)": "SelfSell", "自營商買賣超股數(自行買賣)": "SelfBalance", "自營商買進股數(避險)": "SelfHedgingBuy", "自營商賣出股數(避險)": "SelfHedgingSell", "自營商買賣超股數(避險)": "SelfHedgingBalance", "三大法人買賣超股數": "LegalPersonBalance"})
+    # df_vol.insert(1, "TradeDate", db_ymd)
+    # # 2.留下有關心的股票
+    # df_vol = pd.merge(df_vol, stk_data.filter(items = ["StockID"]), on = ["StockID"])
+    # # 3.刪舊資料
+    # condition = {"TradeDate": (db_ymd)}
+    # db.delDataFromDB(tb, condition)
+    # # 4.更新資料    
+    # db.updateDataToDB(tb, df_vol)
+
 # 把基本資料及量都併進來
-def getStockDailyDataDB(StkDF, cfgname, days):
-    dailytable = cfg.getConfigValue(cfgname, "tb_daily")
-    StkLst = tuple(StkDF["StockID"].astype(str).to_list())
-    # db connection
-    rddb_con = db.mySQLconn(dailytable.split(".")[0], "read")
-    # 取出前days(250)的那個日子
-    start_date = pd.read_sql(f"SELECT DISTINCT TradeDate FROM {dailytable}" , con = rddb_con)
-    start_date = start_date.sort_index(ascending = False).reset_index(drop = True)
-    start_date = start_date.loc[days][0].strftime("%Y%m%d")
-    # 取資料
-    df = pd.read_sql(f"SELECT * FROM {dailytable} WHERE TradeDate >= {start_date} AND StockID IN {StkLst}" , con = rddb_con).drop(columns = "modifytime").sort_values(by = ["StockID", "TradeDate"], ascending = True)
-    # 取得量的資料
-    df = mergeVolumeDataDB(df, cfgname)
-    # 取得股票完整基本資料
-    df = df.merge(StkDF, on = ["StockID"], how = "left")
+def getStockDailyDataFromDB(stkBsData = None, days:int = 250):
+    dytb = cfg().getValueByConfigFile(key = "tb_daily")
+    slst = tuple(tool.DFcolumnToList(inDF = stkBsData, colname = "StockID"))
+    sql = f"SELECT DISTINCT TradeDate FROM {dytb}"
+    sdate = db().selectDatatoDF(sql_statment = sql)
+    sdate = sdate.sort_index(ascending = False).reset_index(drop = True)
+    sdate = sdate.loc[days][0].strftime("%Y%m%d")
+    sql = f"SELECT * FROM {dytb} WHERE TradeDate >= {sdate} AND StockID IN {slst}"
+    df = db().selectDatatoDF(sql_statment = sql).sort_values(by = ["StockID", "TradeDate"], ascending = True)
+    df = mergeVolumeDataDB(df)
+    df = df.merge(stkBsData, on = ["StockID"], how = "left")
     return df
 
-def mergeVolumeDataDB(dframe, cfgname):
+def mergeVolumeDataDB(in_DF = None):
     # 找出這次資料的最後一筆日期
-    df = dframe.sort_values(by = "TradeDate", ascending = False)
-    df_ymd = df["TradeDate"].head(1).values[0].strftime("%Y%m%d")
-    # 從DB抓取資料
-    tb_vol = cfg.getConfigValue(cfgname, "tb_volume")
-    filt = {"TradeDate": df_ymd}
-    vol_df = db.readDataFromDBtoDF(tb_vol, filt).filter(items = ["StockID", "TradeDate", "CreditBalance"]).rename(columns = {"CreditBalance": "投信買賣超股數"})
-    # vol_df.insert(0, "TradeDate", df["TradeDate"].head(1).values[0])
-    if not vol_df.empty:
-        return dframe.merge(vol_df, on = ["StockID", "TradeDate"], how = "left")
-    else:
-        print(f"沒有取到{tb_vol}的資料!!")
-
-def writeResultData(dframe, cfgname):
-    # 找出這次資料的最後一筆日期
-    df = dframe.sort_values(by = "TradeDate", ascending = False)
-    df_ymd = df["TradeDate"].head(1).values[0].strftime("%Y%m%d")
-    resultfile = cfg.getConfigValue(cfgname, "dailypath") + "/" + cfg.getConfigValue(cfgname, "resultname") + f"_{df_ymd}.xlsx"
+    tb = cfg().getValueByConfigFile(key = "tb_volume")
+    max_ymd = in_DF.TradeDate.max().strftime("%Y%m%d")
+    sql = f"SELECT * FROM {tb} WHERE TradeDate = {max_ymd}"
     
-    # 找到資料然後搬到Backup
-    # files = os.listdir(cfg.getConfigValue(cfgname, "filepath"))
-    # matching = [s for s in files if cfg.getConfigValue(cfgname, "resultname") in s]
-    # for file in matching:
-    #     fmname = cfg.getConfigValue(cfgname, "filepath") + f"/{file}"
-    #     toname = cfg.getConfigValue(cfgname, "bkpath") + f"/{file}"
-    #     os.replace(fmname, toname)
+    try:
+        volDF = db().selectDatatoDF(sql_statment = sql).filter(items = ["StockID", "TradeDate", "CreditBalance", "ForeignBalance", "SelfTotalBalance"]).rename(columns = {"CreditBalance": "投信(股數)", "ForeignBalance": "外資(股數)", "SelfTotalBalance": "自營商(股數)" })
+        out_DF = in_DF.merge(volDF, on = ["StockID", "TradeDate"], how = "left")
+        return out_DF
+    except Exception as exc:
+        print(exc)
 
-    first = True
-    for stockid, gp_df in dframe.groupby("StockID"):
-        gp_df = gp_df.sort_values(by = "TradeDate", ascending = False)
-        gp_df = gp_df.iloc[[0]].filter(items = (["StockID", "StockName", "上市/上櫃", "投信買賣超股數", "TradeDate", "Close", "Volume", ] + [x for x in gp_df.columns[gp_df.columns.str.contains("sgl")]]))
+    # df = in_DF.sort_values(by = "TradeDate", ascending = False)
+    # df_ymd = df["TradeDate"].head(1).values[0].strftime("%Y%m%d")
 
-        if first == True:
-            df = gp_df
-            first = False
-        else:
-            df = df.append(gp_df)
-    # 產生結果的Excel
-    file.genFiles(cfgname, df, resultfile, "xlsx")
-    return df
+    # 從DB抓取資料
+    # tb_vol = cfg().getValueByConfigFile(key = "tb_volume")
+    # sql = f"SELECT * FROM {tb_vol} WHERE TradeDate = {df_ymd}"
+    # vol_df = db().selectDatatoDF(sql_statment = sql).filter(items = ["StockID", "TradeDate", "CreditBalance"]).rename(columns = {"CreditBalance": "投信買賣超股數"})
+    # tb_vol = cfg.getConfigValue(cfgname, "tb_volume")
+    # filt = {"TradeDate": df_ymd}
+    # vol_df = db.readDataFromDBtoDF(tb_vol, filt).filter(items = ["StockID", "TradeDate", "CreditBalance"]).rename(columns = {"CreditBalance": "投信買賣超股數"})
+    # vol_df.insert(0, "TradeDate", df["TradeDate"].head(1).values[0])
+    # if not vol_df.empty:
+    #     return dframe.merge(vol_df, on = ["StockID", "TradeDate"], how = "left")
+    # else:
+    #     print(f"沒有取到{tb_vol}的資料!!")
+
+def writeResultDataToFile(fullDF = None):
+    max_ymd = fullDF.TradeDate.max().strftime("%Y%m%d")
+    filename = cfg().getValueByConfigFile(key = "dailypath") + "/" + cfg().getValueByConfigFile(key = "resultname") + f"_{max_ymd}.xlsx"
+
+    max_ymd = fullDF.TradeDate.max()
+    outDF = fullDF[fullDF.TradeDate == max_ymd].sort_values(by = "TradeDate", ascending = False).filter(items = (["StockID", "StockName", "上市/上櫃", "投信(股數)", "外資(股數)", "自營商(股數)", "TradeDate", "Close", "Volume", ] + [x for x in fullDF.columns[fullDF.columns.str.contains("sgl")]]))
+    file.GeneratorFromDF(outDF, filename)
+    
+    
+    # # 找出這次資料的最後一筆日期
+    # df = dframe.sort_values(by = "TradeDate", ascending = False)
+    # df_ymd = df["TradeDate"].head(1).values[0].strftime("%Y%m%d")
+    # resultfile = cfg.getConfigValue(cfgname, "dailypath") + "/" + cfg.getConfigValue(cfgname, "resultname") + f"_{df_ymd}.xlsx"
+    
+    # # 找到資料然後搬到Backup
+    # # files = os.listdir(cfg.getConfigValue(cfgname, "filepath"))
+    # # matching = [s for s in files if cfg.getConfigValue(cfgname, "resultname") in s]
+    # # for file in matching:
+    # #     fmname = cfg.getConfigValue(cfgname, "filepath") + f"/{file}"
+    # #     toname = cfg.getConfigValue(cfgname, "bkpath") + f"/{file}"
+    # #     os.replace(fmname, toname)
+
+    # first = True
+    # for stockid, gp_df in dframe.groupby("StockID"):
+    #     gp_df = gp_df.sort_values(by = "TradeDate", ascending = False)
+    #     gp_df = gp_df.iloc[[0]].filter(items = (["StockID", "StockName", "上市/上櫃", "投信買賣超股數", "TradeDate", "Close", "Volume", ] + [x for x in gp_df.columns[gp_df.columns.str.contains("sgl")]]))
+
+    #     if first == True:
+    #         df = gp_df
+    #         first = False
+    #     else:
+    #         df = df.append(gp_df)
+    # # 產生結果的Excel
+    # file.genFiles(cfgname, df, resultfile, "xlsx")
+    # return df
+
+
+
+
 
 
 def getBSobj(YYYYMMDD, market, cfgname):
@@ -654,45 +637,83 @@ def mergeVolumeDataFile(dframe, cfgname):
 
 
 
-markets = ["TSE", "OTC"]
+# markets = ["TSE", "OTC"]
+
 keyindex = ["SMA", "BBands", "SAR_002", "SAR_003", "maxmin_120", "maxmin_240", "RSI"]
 # stocks = ["OTC"]
-cfg_fname = "./config/config.json"
+# cfg_fname = "./config/config.json"
 
-stk_api = con.connectToServer(cfg.getConfigValue(cfg_fname, "login"))
-stk_info = getStockData(stk_api, markets)
 
-writeRawDataDB(stk_api, stk_info, cfg_fname)
-print("Write Daily Trade Amount!")
-# writeRawDataFile(stk_api, stk_info, cfg_fname)
-writeLegalPersonDailyVolumeDB(markets, cfg_fname, stk_info)
-print("Write Daily Trade Volumn!")
-# writeLegalPersonDailyVolumeFile(markets, cfg_fname)
+api = con().LoginToServerForStock(simulate = False)
+BsData = con(api).getStockDataByCondition()
+
+writeDailyRawDataDB(api, BsData)
+writeLegalPersonDailyVolumeDB(BsData)
+
 # 取得每天的成交資料(後面數字是往回抓幾天)
-
-stk_df = getStockDailyDataDB(stk_info, cfg_fname, 250)
-print("Get Full Data!")
-# stk_df = getStockDailyDataFile(stk_info, cfg_fname, 250)
-
-
+stkDF = getStockDailyDataFromDB(BsData, 250)
 
 # stk_df = getStockMACD(stk_df, [12, 26, 9])
 
-stk_df = getStockSMA(stk_df, [5, 10, 20, 60])
-stk_df = getStockBBands(stk_df, 10, 2) 
-stk_df = getStockSAR(stk_df, 0.02, 0.2)
-stk_df = getStockSAR(stk_df, 0.03, 0.3)
-stk_df = getStockMaxMin(stk_df, [120, 240], ["max", "min"])
-stk_df = getStockRSI(stk_df, [6, 12])
+stkDF = getStockSMA(stkDF, [5, 10, 20, 60])
+stkDF = getStockBBands(stkDF, 10, 2) 
+stkDF = getStockSAR(stkDF, 0.02, 0.2)
+stkDF = getStockSAR(stkDF, 0.03, 0.3)
+stkDF = getStockMaxMin(stkDF, [120, 240], ["max", "min"])
+stkDF = getStockRSI(stkDF, [6, 12])
 
 for k in keyindex:
-    stk_df = getSignal(stk_df, k)
+    stkDF = getSignal(stkDF, k)
 
-stk_df  = writeResultData(stk_df, cfg_fname)
-
-if stk_df.StockID.count() != stk_info.StockID.count():
-    print(f"觀察清單{stk_info.StockID.count()}和最後結果清單{stk_df.StockID.count()}筆數不一致!!!")
+writeResultDataToFile(stkDF)
 
 
 
 # %%
+# 只要上市/上櫃,不要金融, KY股, 股價>=20
+# def getStockData(api, stocks):
+#     # api.Contracts.Stocks資料結構
+#     ## [exchange(市場), code(代碼), symbol(市場+代碼), name(公司名), category(產業分類), unit(1張1000股), limit_up(前一交易日漲停價), limit_down(前一交易日跌停價), reference(前一交易日收盤價), update_date(更新日)]
+#     df = []
+#     for s in stocks:
+#         df_market =[]
+#         i = 0
+#         # 上市(筆數太多要等一下)
+#         if s == "TSE":
+#             market = api.Contracts.Stocks.TSE
+#             time.sleep(10)
+#         # 上櫃    
+#         if s == "OTC":
+#             market = api.Contracts.Stocks.OTC
+#         # 興櫃
+#         if s == "OES":  
+#             market = api.Contracts.Stocks.OES
+        
+#         for id in market:
+#             df_market.append({**id})
+#         df_market = pd.DataFrame(df_market)
+#         # https://members.sitca.org.tw/OPF/K0000/files/F/01/%E8%AD%89%E5%88%B8%E4%BB%A3%E7%A2%BC%E7%B7%A8%E7%A2%BC%E5%8E%9F%E5%89%87.doc分類對照表(17金融)
+#         # 不要權證/金融股 / 小於20元
+#         df_market = df_market[~df_market["category"].isin(["00", "", "17"]) & ~df_market["name"].str.contains("KY") & ~df_market["name"].str.contains("特")]
+#         # df_market = df_market[( df_market["limit_up"] + df_market["limit_down"] ) / 2 >= 20]
+#         df_market = df_market[df_market["reference"] >= 20]
+
+
+#         while True:
+#             date_check = (date.today() - timedelta(days = i)).strftime("%Y/%m/%d")
+#             df_check = df_market[df_market["update_date"] == date_check]
+#             i += 1
+#             if not df_check.empty:
+#                 df_market = df_check
+#                 break
+    
+#         if s == stocks[0]:
+#             df = df_market
+#         else:
+#             df = df.append(df_market)
+    
+#     df = df.filter(items = ["code", "name", "exchange", "category", "update_date"]).rename(columns = {"code": "StockID", "name": "StockName", "exchange": "上市/上櫃"}).replace({"TSE": "上市", "OTC": "上櫃", "OES": "興櫃"})
+#     # 下面這段是更新DB用的
+#     toDB = df.filter(items = ["StockID", "StockName", "上市/上櫃", "category"]).rename(columns = {"StockName": "Name", "上市/上櫃": "Exchange", "category": "categoryID"})
+#     db.updateDataToDB("stock.basicdata", toDB)
+#     return df.reset_index(drop = True)

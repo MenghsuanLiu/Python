@@ -1,184 +1,211 @@
 # %%
 import pandas as pd
-import os
-import time
-import shioaji as sj
+import random
 from shioaji import constant
-from datetime import date, timedelta, datetime
-from util import con, cfg, file
-
-# t = con()
-# # t.LoginToServer(sim = False)
-# t.LoginToServer(sim = False)
+from datetime import datetime
+from util import con, file, stg, tool, db
 
 
 order = []
 deal = []
-def getAttentionStockDF(cfg_file):
-    FileLst = os.listdir(cfg.getConfigValue(cfg_file, "dailypath"))
-    matching = []
-    i = 0
-    while True:
-        # 算出最近有資料的那一天
-        TradeDate = (date.today() - timedelta(days = i)).strftime("%Y%m%d")
-        Fname = cfg.getConfigValue(cfg_file, "resultname") + f"_{TradeDate}.xlsx"
-        Fmatch = [s for s in FileLst if Fname in s]
-        i += 1
-        if Fmatch !=[]:
-            Ffullpath = cfg.getConfigValue(cfg_file, "dailypath") + "/" + cfg.getConfigValue(cfg_file, "resultname") + f"_{TradeDate}.xlsx"
-            break
-
-    stkDF = pd.read_excel(Ffullpath)
-    # 邏輯: 前一交易日成交價 > 60MA & 10MA,且成交量 >= 5000張 
-    stkDF = stkDF.loc[(stkDF.sgl_SMA > 0) & (stkDF.Volume >= 5000) & (stkDF.sgl_SAR_002 > 0)]
-    stkDF.StockID = stkDF.StockID.astype(str)
-    return stkDF
-
-def getListContractForAPI(api, StkDF):
-    stkLst = StkDF.StockID.astype(str).tolist()
-    Clst = []
-    # StkLimit = []
-    for Sid in stkLst:
-        Clst.append(api.Contracts.Stocks[Sid])
-        # 下面這段是可以抓出個股的漲跌停
-        # StkLimit.append([Sid, api.Contracts.Stocks[Sid].limit_up, api.Contracts.Stocks[Sid].limit_down])
-    # if StkLimit != []:
-    #     StkLimitDF = pd.DataFrame(StkLimit, columns = ["StockID", "LimitUP", "LimitDown"])
-    #     StkDF = StkDF.merge(StkLimitDF, on = ["StockID"], how = "left")
-    return Clst
-
-def get5minSnapshotOLHC(api, Contract, settime):
-    while True:
-        if datetime.now().strftime("%H:%M:%S") == settime:
-            min5DF = pd.DataFrame(api.snapshots(Contract)).filter(items = ["code", "ts", "open", "high", "low", "close", "volume" ]).rename(columns = {"code": "StockID", "ts": "DateTime", "open": "Open", "high": "High", "low": "Low", "close": "5minClose", "volume": "Volume"})
-            min5DF.DateTime = pd.to_datetime(min5DF.DateTime)
-            min5DF["TradeDate"] = pd.to_datetime(min5DF.DateTime).dt.strftime("%Y%m%d")
-            min5DF["TradeTime"] = pd.to_datetime(min5DF.DateTime).dt.time
-            min5DF["SnapShotTime"] = datetime.now().strftime("%H:%M:%S")
-            min5DF.StockID = min5DF.StockID.astype(str)
-            return min5DF
-
-def getBuyStockDF(FocusDF, SanpShotDF):
-    BuyDF = pd.DataFrame()
-    HoldDF = pd.DataFrame()
-    MergeDF = FocusDF.filter(items = ["StockID", "StockName", "上市/上櫃", "Close"]).merge(SanpShotDF.filter(items = ["StockID", "5minClose"]), on = ["StockID"], how = "left")
-
-    MergeDF["BuyFlag"] = ""
-    MergeDF.loc[(MergeDF["5minClose"] < MergeDF["Close"] * 1.05), "BuyFlag"] = "X"
-    BuyDF = MergeDF.loc[MergeDF.BuyFlag == "X"]
-    HoldDF = MergeDF.loc[MergeDF.BuyFlag == ""]
-    return BuyDF, HoldDF
-
-def normalStockBuy(api, stockid, buyprice, qty):
-    # Order參數說明  action{Buy, Sell}, price_type{LMT(限價), MKT(市價), MKP(範圍市價)} p.s MKT/MKP只能搭IOC, price = 0
-    #               order_type{ROD, IOC, FOK}, order_cond{Cash(現股), MarginTrading(融資), ShortSelling(融券)}
-    #               order_lot{Common(整股), Fixing(定盤), Odd(盤後零股), IntradayOdd(盤中零股)}
-    Ctract = api.Contracts.Stocks[stockid]
-    # 漲停
-    myotype = "ROD"
-    myptype = "LMT"
-    myprice = buyprice
-    if buyprice == "up":
-        myprice = Ctract.limit_up
-    # 跌停
-    if buyprice == "down":
-        myprice = Ctract.limit_down        
-    # 現價
-    if buyprice == "now":
-        myprice = 0
-        myotype = "IOC"
-        myptype = "MKT"   
-    order = api.Order(
-                    price = myprice, 
-                    quantity = qty, 
-                    action = "Buy", 
-                    price_type = myptype, 
-                    order_type = myotype,
-                    order_cond = "Cash",
-                    order_lot = "Common",                     
-                    account = api.stock_account
-                )
-    api.place_order(Ctract, order)
-    return
-
 def placeOrderCallBack(order_state: constant.OrderState, order: dict):
-    item = []
-    if order_state == sj.constant.OrderState.TFTOrder: 
-        item.append(order["contract"]["code"])
-        item.append(order["order"]["action"])
-        item.append(order["order"]["price"])
-        item.append(order["order"]["quantity"])
-        item.append(order["order"]["order_type"])
-        item.append(order["order"]["price_type"])
-        item.append(order["status"]["exchange_ts"])
-        order.append(item)
-    if order_state == sj.constant.OrderState.TFTDeal:
-        item.append(order["code"])
-        item.append(order["price"])
-        item.append(order["quantity"])
-        item.append(order["ts"])
-        deal.append(item)
+    itemorder = []
+    itemdeal = []
+    if order_state == constant.OrderState.TFTOrder: 
+        itemorder.append(order["contract"]["code"])
+        itemorder.append(order["order"]["action"])
+        itemorder.append(order["order"]["price"])
+        itemorder.append(order["order"]["quantity"])
+        itemorder.append(order["order"]["order_type"])
+        itemorder.append(order["order"]["price_type"])
+        itemorder.append(order["status"]["exchange_ts"])
+        t_date = datetime.fromtimestamp(int(order["status"]["exchange_ts"])).date().strftime("%Y%m%d")
+        t_time = datetime.fromtimestamp(int(order["status"]["exchange_ts"])).time().strftime("%H:%M:%S")
+        itemorder.append(t_date)
+        itemorder.append(t_time)
+        order.append(itemorder)
+
+    if order_state == constant.OrderState.TFTDeal:
+        itemdeal.append(order["code"])
+        itemdeal.append(order["price"])
+        itemdeal.append(order["quantity"])
+        itemdeal.append(order["ts"])
+        t_date = datetime.fromtimestamp(int(order["status"]["exchange_ts"])).date().strftime("%Y%m%d")
+        t_time = datetime.fromtimestamp(int(order["status"]["exchange_ts"])).time().strftime("%H:%M:%S")
+        itemdeal.append(t_date)
+        itemdeal.append(t_time)
+        deal.append(itemdeal)
 
 
+check_secs = 30
+# 1.連接Server,指定帳號,同時active憑證[不給參數就使用模擬環境]
+# api = con().LoginToServerForStock()
+api = con().LoginToServerForStock(simulate = False, ca_acct = "chris")
+# 註:更換另一個帳號
+# con(api).ChangeTreadAccount(ca_acct = "lydia")
 
-# %%
-
-cfg_fname = "./config/config.json"
-
-
-
-# 1.連接Server,指定帳號,同時active憑證
-api = con.connectToServer(cfg.getConfigValue(cfg_fname, "login"))
-# api = con.connectToSimServer()
-con.SetDefaultAccount(api, "S", "chris")
-con.InsertCAbyConfig(api,cfg.getConfigValue(cfg_fname, "ca"))
+# 2.設定成交即時回報
 api.set_order_callback(placeOrderCallBack)
 
-stkDF = getAttentionStockDF(cfg_fname)
-# 組合需要抓價量的Stocks,同時抓出各股的漲跌停
+# 3.依策略決定下單清單
+stkDF_new = file().getLastFocusStockDF()
+stkDF = pd.DataFrame()
+stkDF = stg(stkDF_new).SMA_SAR002_Volume_MAXMIN120()
+if stkDF.empty:
+    stkDF = stg(stkDF_new).SMA_SAR002_Volume()
+
+# 4.組合需要抓價量的Stocks
+contracts = con(api).getContractForAPI(stkDF)
+
+# 5.取得開盤後5min的OHLC的值(測試時會自動立即run)
+minSnapDF = con(api).getAfterOpenTimesSnapshotData(contract = contracts, nmin_run = 5)
+try:
+    db().updateDFtoDB(minSnapDF, tb_name = "tmpsnapshotdata")
+except:
+    pass
+
+# 6.依買的策略產生Buy List
+stgBuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_01(minSnapDF)
+BuyList = tool.DFcolumnToList(stgBuyDF, "StockID")
+
+# 7.下單(測試時抓n個出來買就好)
+# BuyList = random.sample(BuyList, 10)
+BuyList = random.choices(BuyList, k = random.choice(range(1,len(BuyList))))
+
+for id in BuyList:
+    con(api).StockNormalBuy(stkid = id, buyprice = "down", buyqty = 1)
 # %%
-contracts = getListContractForAPI(api, stkDF)
-# 取得開盤後5min的OHLC的值(測試時需要建一個時間)
-# exetime = (datetime.now() + timedelta(minutes = 1)).strftime("%H:%M:%S")
-exetime = "09:05:00"
-DF_SnapShot_5 = get5minSnapshotOLHC(api, contracts, exetime)
+tool.WaitingTimeDecide(check_secs)
+
+# 8.固定時間觀察訂單狀況,決定策略datetime.now()大約會在09:05
+dotimes = tool.calcuateTimesBetweenTwoTime(stime = datetime.now().strftime("%H:%M:%S"), feq = check_secs)
+bf_cls5 = tool.calcuateTimesBetweenTwoTime(stime = datetime.now().strftime("%H:%M:%S"), etime = "13:25:00", feq = check_secs)
+
+t = 0
+while True:
+    t += 1
+
+    # 收盤前5mins要清倉
+    if t == bf_cls5:
+        pass
+    
+    # 收盤就離開了
+    if t == dotimes:
+        break
+    
+    # 休息時間
+    tool.WaitingTimeDecide(check_secs)
 
 
-# 取得買及不買的資料
-BuyDF, noBuyDF = getBuyStockDF(stkDF, DF_SnapShot_5)
-# %%
-# 如果買的資料不是空值,就做成List用漲停價買進
-a = 0
-if not BuyDF.empty:
-    BuyLst = BuyDF.StockID.astype(str).tolist()
-    for id in BuyLst:
-        normalStockBuy(api, id, "down", 1)
-        a += 1
-        if a == 3:
-            break
 
 
-# 盤中9:00~13:30 => 270 mins
-# for i in range(0, 531):
-# %%
-for i in range(0, 150):
-    # 更新狀態
-    # api.update_status()
-    time.sleep(60)
-
+ymd = datetime.now().strftime("%Y%m%d")
 if order != []:
-    col = ["StockID", "Action", "Price", "Qty", "OrderType", "PriceType", "ts"]
+    col = ["StockID", "Action", "Price", "Qty", "OrderType", "PriceType", "ts",  "TradeDate", "TradeTime"]
     orderDF = pd.DataFrame(order, columns = col)
-    orderDF["TradeDate"] = pd.to_datetime(orderDF.ts).apply(lambda x: x.strftime("%Y%m%d"))
-    orderDF["TradeTime"] = pd.to_datetime(orderDF.ts).dt.time
-    file.genFiles(cfg_fname, orderDF, "./data/order.xlsx", "xlsx")
+    file.GeneratorFromDF(orderDF, f"./data/ActuralTrade/order_{ymd}.xlsx")
+    # orderDF["TradeDate"] = pd.to_datetime(orderDF.ts).apply(lambda x: x.strftime("%Y%m%d"))
+    # orderDF["TradeTime"] = pd.to_datetime(orderDF.ts).dt.time
+    # file.genFiles(cfg_fname, orderDF, f"./data/ActuralTrade/order_{ymd}.xlsx", "xlsx")
 
 if deal != []:
-    col = ["StockID", "Price", "Qty", "ts"]
+    col = ["StockID", "Price", "Qty", "ts", "TradeDate", "TradeTime"]
     dealDF = pd.DataFrame(deal, columns = col)
-    dealDF["TradeDate"] = pd.to_datetime(dealDF.ts).apply(lambda x: x.strftime("%Y%m%d"))
-    dealDF["TradeTime"] = pd.to_datetime(dealDF.ts).dt.time
-    file.genFiles(cfg_fname, dealDF, "./data/deal.xlsx", "xlsx")
+    file.GeneratorFromDF(orderDF, f"./data/ActuralTrade/deal_{ymd}.xlsx")
+    # dealDF["TradeDate"] = pd.to_datetime(dealDF.ts).apply(lambda x: x.strftime("%Y%m%d"))
+    # dealDF["TradeTime"] = pd.to_datetime(dealDF.ts).dt.time
+    # file.genFiles(cfg_fname, dealDF, f"./data/ActuralTrade/deal_{ymd}.xlsx", "xlsx")
+
+
+
+
+
+# def getAttentionStockDF(cfg_file):
+#     FileLst = os.listdir(cfg.getConfigValue(cfg_file, "dailypath"))
+#     matching = []
+#     i = 0
+#     while True:
+#         # 算出最近有資料的那一天
+#         TradeDate = (date.today() - timedelta(days = i)).strftime("%Y%m%d")
+#         Fname = cfg.getConfigValue(cfg_file, "resultname") + f"_{TradeDate}.xlsx"
+#         Fmatch = [s for s in FileLst if Fname in s]
+#         i += 1
+#         if Fmatch !=[]:
+#             Ffullpath = cfg.getConfigValue(cfg_file, "dailypath") + "/" + cfg.getConfigValue(cfg_file, "resultname") + f"_{TradeDate}.xlsx"
+#             break
+# 
+#     stkDF = pd.read_excel(Ffullpath)
+#     # 邏輯: 前一交易日成交價 > 60MA & 10MA,且成交量 >= 5000張 
+#     stkDF = stkDF.loc[(stkDF.sgl_SMA > 0) & (stkDF.Volume >= 5000) & (stkDF.sgl_SAR_002 > 0)]
+#     stkDF.StockID = stkDF.StockID.astype(str)
+#     return stkDF
+# 
+# def getListContractForAPI(api, StkDF):
+#     stkLst = StkDF.StockID.astype(str).tolist()
+#     Clst = []
+#     # StkLimit = []
+#     for Sid in stkLst:
+#         Clst.append(api.Contracts.Stocks[Sid])
+#         # 下面這段是可以抓出個股的漲跌停
+#         # StkLimit.append([Sid, api.Contracts.Stocks[Sid].limit_up, api.Contracts.Stocks[Sid].limit_down])
+#     # if StkLimit != []:
+#     #     StkLimitDF = pd.DataFrame(StkLimit, columns = ["StockID", "LimitUP", "LimitDown"])
+#     #     StkDF = StkDF.merge(StkLimitDF, on = ["StockID"], how = "left")
+#     return Clst
+# 
+# def get5minSnapshotOLHC(api, Contract, settime):
+#     while True:
+#         if datetime.now().strftime("%H:%M:%S") == settime:
+#             min5DF = pd.DataFrame(api.snapshots(Contract)).filter(items = ["code", "ts", "open", "high", "low", "close", "volume" ]).rename(columns = {"code": "StockID", "ts": "DateTime", "open": "Open", "high": "High", "low": "Low", "close": "5minClose", "volume": "Volume"})
+#             min5DF.DateTime = pd.to_datetime(min5DF.DateTime)
+#             min5DF["TradeDate"] = pd.to_datetime(min5DF.DateTime).dt.strftime("%Y%m%d")
+#             min5DF["TradeTime"] = pd.to_datetime(min5DF.DateTime).dt.time
+#             min5DF["SnapShotTime"] = datetime.now().strftime("%H:%M:%S")
+#             min5DF.StockID = min5DF.StockID.astype(str)
+#             return min5DF
+# 
+# def getBuyStockDF(FocusDF, SanpShotDF):
+#     BuyDF = pd.DataFrame()
+#     HoldDF = pd.DataFrame()
+#     MergeDF = FocusDF.filter(items = ["StockID", "StockName", "上市/上櫃", "Close"]).merge(SanpShotDF.filter(items = ["StockID", "5minClose"]), on = ["StockID"], how = "left")
+# 
+#     MergeDF["BuyFlag"] = ""
+#     MergeDF.loc[(MergeDF["5minClose"] < MergeDF["Close"] * 1.05), "BuyFlag"] = "X"
+#     BuyDF = MergeDF.loc[MergeDF.BuyFlag == "X"]
+#     HoldDF = MergeDF.loc[MergeDF.BuyFlag == ""]
+#     return BuyDF, HoldDF
+# 
+# def normalStockBuy(api, stockid, buyprice, qty):
+#     # Order參數說明  action{Buy, Sell}, price_type{LMT(限價), MKT(市價), MKP(範圍市價)} p.s MKT/MKP只能搭IOC, price = 0
+#     #               order_type{ROD, IOC, FOK}, order_cond{Cash(現股), MarginTrading(融資), ShortSelling(融券)}
+#     #               order_lot{Common(整股), Fixing(定盤), Odd(盤後零股), IntradayOdd(盤中零股)}
+#     Ctract = api.Contracts.Stocks[stockid]
+#     # 漲停
+#     myotype = "ROD"
+#     myptype = "LMT"
+#     myprice = buyprice
+#     if buyprice == "up":
+#         myprice = Ctract.limit_up
+#     # 跌停
+#     if buyprice == "down":
+#         myprice = Ctract.limit_down        
+#     # 現價
+#     if buyprice == "now":
+#         myprice = 0
+#         myotype = "IOC"
+#         myptype = "MKT"   
+#     order = api.Order(
+#                     price = myprice, 
+#                     quantity = qty, 
+#                     action = "Buy", 
+#                     price_type = myptype, 
+#                     order_type = myotype,
+#                     order_cond = "Cash",
+#                     order_lot = "Common",                     
+#                     account = api.stock_account
+#                 )
+#     api.place_order(Ctract, order)
+#     return
 
 
 # # %%
@@ -244,6 +271,7 @@ if deal != []:
 # api.list_trades()[0].status.order_datetime.strftime("%Y/%m/%d %H:%M:%S")
 # api.list_trades()[0].status.status_code
 # api.list_trades()[0].status.status.value
+# api.list_trades()[0].order.price
 # # PendingSubmit: 傳送中
 # # PreSubmitted: 預約單
 # # Submitted: 傳送成功
@@ -257,4 +285,4 @@ if deal != []:
 
 # # 庫存資料轉DF
 # pd.DataFrame(api.list_positions(api.stock_account))
-# %%
+
