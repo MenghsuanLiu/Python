@@ -57,6 +57,7 @@ class con:
         self.ca_acct = "chris"
         self.ca_userid = None
         self.start_time = "09:00:00"
+        self.end_time = "13:30:00"
         self.markets = ["TSE", "OTC"]
         self.mkt_mapping = {"TSE": "上市", "OTC": "上櫃", "OES": "興櫃"}
         self.ex_cate = ["00", "", "17"] # 排除類別00:權證, 17:金融
@@ -181,6 +182,20 @@ class con:
                 break
         return outDF 
 
+    def getMinsSnapshotData(self, contract = None, start: int = 10):
+        self.start_time = (datetime.strptime(self.start_time, "%H:%M:%S") + timedelta(minutes = start)).strftime("%H:%M:%S")
+        outDF = pd.DataFrame()
+        # 收盤後只要取一次就好
+        if datetime.now().time() > datetime.strptime(self.end_time, "%H:%M:%S").time() or datetime.today().weekday() in (5, 6):
+            outDF = self.getMinSnapshotData(contract)
+            return outDF
+        
+        while True:
+            outDF = outDF.append(self.getMinSnapshotData(contract))            
+            if datetime.now().strftime("%H:%M:%S") == self.start_time:
+                break
+            tool.WaitingTimeDecide(60)
+
     def getMinSnapshotData(self, ctract:list):
         minDF = pd.DataFrame(self.api.snapshots(ctract)).filter(items = ["code", "ts", "open", "high", "low", "close", "volume" ]).rename(columns = {"code": "StockID", "ts": "DateTime", "open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"})
         minDF.DateTime = pd.to_datetime(minDF.DateTime)
@@ -195,6 +210,7 @@ class con:
             outDF = pd.DataFrame({**self.api.kbars(self.api.Contracts.Stocks[stkid], start = sdate, end = edate)})
             outDF["TradeDate"] = pd.to_datetime(outDF.ts).dt.strftime("%Y%m%d")
             outDF["TradeTime"] = pd.to_datetime(outDF.ts).dt.time
+            outDF["DateTime"] = pd.to_datetime(outDF.ts)
             outDF.insert(0, "StockID", str(stkid))
             outDF = outDF.sort_values(by = "ts")
         except Exception as exc:
@@ -542,6 +558,14 @@ class stg:
         BuyDF = MergeDF.loc[MergeDF.BuyFlag == "X"]        
         return BuyDF.drop(columns = ["BuyFlag", "High", "snapClose", "Close"])
 
+    def BuyStrategyFromOpenSnapDF_03(self, snap_DF):
+        snap_DF = snap_DF.set_index("DateTime").groupby("StockID").resample("5T", label = "right", closed = "right").agg({"Open": "first", "High": max, "Low": min, "Close": "last", "Volume": sum}).reset_index()
+        ymd = datetime.now().strftime("%Y%m%d")
+        if snap_DF != []:
+            file.GeneratorFromDF(snap_DF, f"./data/ActuralTrade/snap_{ymd}.xlsx")
+
+
+
 class tool:
 
     def DFcolumnToList(inDF, colname:str):
@@ -552,7 +576,7 @@ class tool:
     def WaitingTimeDecide(secs:int = 30):
         closetime = "14:00:00"
         # 這段是防止開盤後run時跑去等開盤時間
-        if datetime.now().strftime("%H:%M:%S") > closetime:
+        if datetime.now().time() > datetime.strptime(closetime, "%H:%M:%S").time() or datetime.today().weekday() in (5, 6):
             wait = 0.1
         else:
             wait = secs - (int(datetime.now().strftime("%S")) % secs)

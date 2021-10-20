@@ -27,7 +27,8 @@ def writeDailyRawDataDB(api = None, StkDF = None):
             kBarDF = kBarDF.append(DF)
     # 資料庫有資料 kBarDF就可能是空的       
     if not kBarDF.empty:
-        kBarDF = kBarDF.filter(items = ["StockID",  "TradeDate", "TradeTime", "Open", "High", "Low", "Close", "Volume"]).drop_duplicates(subset = ["StockID", "TradeDate", "TradeTime"], keep = "first").reset_index()
+        # kBarDF = kBarDF.filter(items = ["StockID",  "TradeDate", "TradeTime", "Open", "High", "Low", "Close", "Volume"]).drop_duplicates(subset = ["StockID", "TradeDate", "TradeTime"], keep = "first")
+        kBarDF = kBarDF.filter(items = ["StockID",  "TradeDate", "TradeTime", "Open", "High", "Low", "Close", "Volume"])
         DkBarDF = kBarDF.groupby(["StockID", "TradeDate"], sort=True).agg({"Open": "first", "High": max, "Low": min, "Close": "last", "Volume": sum}).reset_index()
         # 每日的OHLC資料
         if not DkBarDF.empty:
@@ -76,13 +77,13 @@ def writeLegalPersonDailyVolumeDB(stkBsData = None):
 
         # # 產生DataFrame(每一日的資料)
         # df_daily = pd.DataFrame(ItemData, columns = Head)
-        
+        if not dailyDF.empty:
         # 1.準備要用的資料及換column name
-        dailyDF = dailyDF.drop(columns = ["證券名稱", "外資自營商買進股數", "外資自營商賣出股數", "外資自營商買賣超股數"]).rename(columns = {"證券代號": "StockID", "外陸資買進股數(不含外資自營商)": "ForeignBuy", "外陸資賣出股數(不含外資自營商)": "ForeignSell", "外陸資買賣超股數(不含外資自營商)": "ForeignBalance", "投信買進股數": "CreditBuy", "投信賣出股數": "CreditSell", "投信買賣超股數": "CreditBalance", "自營商買賣超股數": "SelfTotalBalance", "自營商買進股數(自行買賣)": "SelfBuy", "自營商賣出股數(自行買賣)": "SelfSell", "自營商買賣超股數(自行買賣)": "SelfBalance", "自營商買進股數(避險)": "SelfHedgingBuy", "自營商賣出股數(避險)": "SelfHedgingSell", "自營商買賣超股數(避險)": "SelfHedgingBalance", "三大法人買賣超股數": "LegalPersonBalance"})
-        # 2.放入日期
-        dailyDF.insert(1, "TradeDate", vol_lastday)
-        # 3.把DF放入最後要出去的DF
-        allDF = allDF.append(dailyDF)
+            dailyDF = dailyDF.drop(columns = ["證券名稱", "外資自營商買進股數", "外資自營商賣出股數", "外資自營商買賣超股數"]).rename(columns = {"證券代號": "StockID", "外陸資買進股數(不含外資自營商)": "ForeignBuy", "外陸資賣出股數(不含外資自營商)": "ForeignSell", "外陸資買賣超股數(不含外資自營商)": "ForeignBalance", "投信買進股數": "CreditBuy", "投信賣出股數": "CreditSell", "投信買賣超股數": "CreditBalance", "自營商買賣超股數": "SelfTotalBalance", "自營商買進股數(自行買賣)": "SelfBuy", "自營商賣出股數(自行買賣)": "SelfSell", "自營商買賣超股數(自行買賣)": "SelfBalance", "自營商買進股數(避險)": "SelfHedgingBuy", "自營商賣出股數(避險)": "SelfHedgingSell", "自營商買賣超股數(避險)": "SelfHedgingBalance", "三大法人買賣超股數": "LegalPersonBalance"})
+            # 2.放入日期
+            dailyDF.insert(1, "TradeDate", vol_lastday)
+            # 3.把DF放入最後要出去的DF
+            allDF = allDF.append(dailyDF)
         # 當資料庫的日期累加到api中的日期就離開...
         if vol_lastday == stk_lastday:
             break

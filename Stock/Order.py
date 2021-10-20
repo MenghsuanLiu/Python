@@ -2,11 +2,10 @@
 import pandas as pd
 import random
 from shioaji import constant
-from datetime import datetime
+from datetime import datetime, date, time
 from util import con, file, stg, tool, db
 
-
-order = []
+odr = []
 deal = []
 def placeOrderCallBack(order_state: constant.OrderState, order: dict):
     itemorder = []
@@ -23,7 +22,7 @@ def placeOrderCallBack(order_state: constant.OrderState, order: dict):
         t_time = datetime.fromtimestamp(int(order["status"]["exchange_ts"])).time().strftime("%H:%M:%S")
         itemorder.append(t_date)
         itemorder.append(t_time)
-        order.append(itemorder)
+        odr.append(itemorder)
 
     if order_state == constant.OrderState.TFTDeal:
         itemdeal.append(order["code"])
@@ -59,6 +58,7 @@ contracts = con(api).getContractForAPI(stkDF)
 
 # 5.取得開盤後5min的OHLC的值(測試時會自動立即run)
 minSnapDF = con(api).getAfterOpenTimesSnapshotData(contract = contracts, nmin_run = 5)
+# minSnapDF = con(api).getMinsSnapshotData(contract = contracts, start = 10)
 try:
     db().updateDFtoDB(minSnapDF, tb_name = "tmpsnapshotdata")
 except:
@@ -66,15 +66,16 @@ except:
 
 # 6.依買的策略產生Buy List
 stgBuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_01(minSnapDF)
+# stgBuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_03(minSnapDF)
 BuyList = tool.DFcolumnToList(stgBuyDF, "StockID")
 
 # 7.下單(測試時抓n個出來買就好)
 # BuyList = random.sample(BuyList, 10)
-BuyList = random.choices(BuyList, k = random.choice(range(1,len(BuyList))))
+# BuyList = random.choices(BuyList, k = random.choice(range(1,len(BuyList))))
 
 for id in BuyList:
     con(api).StockNormalBuy(stkid = id, buyprice = "down", buyqty = 1)
-# %%
+
 tool.WaitingTimeDecide(check_secs)
 
 # 8.固定時間觀察訂單狀況,決定策略datetime.now()大約會在09:05
@@ -82,8 +83,21 @@ dotimes = tool.calcuateTimesBetweenTwoTime(stime = datetime.now().strftime("%H:%
 bf_cls5 = tool.calcuateTimesBetweenTwoTime(stime = datetime.now().strftime("%H:%M:%S"), etime = "13:25:00", feq = check_secs)
 
 t = 0
+trade_list = []
 while True:
     t += 1
+    api.update_status(api.stock_account)
+    for i in range(0, len(api.list_trades())):
+        l = []
+        l.append(api.list_trades()[i].contract.code)
+        l.append(api.list_trades()[i].order.action.value)
+        l.append(api.list_trades()[i].order.price)
+        l.append(api.list_trades()[i].order.quantity)
+        l.append(api.list_trades()[i].status.status_code)
+        l.append(api.list_trades()[i].status.status.value)
+        l.append(api.list_trades()[i].status.order_datetime.strftime("%Y/%m/%d"))
+        l.append(api.list_trades()[i].status.order_datetime.strftime("%H:%M:%S"))
+        trade_list.append(l)
 
     # 收盤前5mins要清倉
     if t == bf_cls5:
@@ -98,11 +112,15 @@ while True:
 
 
 
-
 ymd = datetime.now().strftime("%Y%m%d")
-if order != []:
+if trade_list != []:
+    col = ["StockID", "Action", "OrderPrice", "OrderQty", "StatusCode", "Status", "TradeDate", "TradeTime"]
+    tradesDF = pd.DataFrame(trade_list, columns = col)
+    file.GeneratorFromDF(tradesDF, f"./data/ActuralTrade/tradeupdate_{ymd}.xlsx")
+
+if odr != []:
     col = ["StockID", "Action", "Price", "Qty", "OrderType", "PriceType", "ts",  "TradeDate", "TradeTime"]
-    orderDF = pd.DataFrame(order, columns = col)
+    orderDF = pd.DataFrame(odr, columns = col)
     file.GeneratorFromDF(orderDF, f"./data/ActuralTrade/order_{ymd}.xlsx")
     # orderDF["TradeDate"] = pd.to_datetime(orderDF.ts).apply(lambda x: x.strftime("%Y%m%d"))
     # orderDF["TradeTime"] = pd.to_datetime(orderDF.ts).dt.time
@@ -286,3 +304,5 @@ if deal != []:
 # # 庫存資料轉DF
 # pd.DataFrame(api.list_positions(api.stock_account))
 
+
+# %%
