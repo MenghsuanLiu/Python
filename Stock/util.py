@@ -8,6 +8,7 @@ import pandas as pd
 import os
 import time
 import shioaji as sj
+import talib
 from bs4 import BeautifulSoup as bs
 from datetime import datetime, date, timedelta
 
@@ -58,6 +59,8 @@ class con:
         self.ca_userid = None
         self.start_time = "09:00:00"
         self.end_time = "13:30:00"
+        self.startdate = datetime.today().strftime("%Y-%m-%d")
+        self.enddate = datetime.today().strftime("%Y-%m-%d")
         self.markets = ["TSE", "OTC"]
         self.mkt_mapping = {"TSE": "上市", "OTC": "上櫃", "OES": "興櫃"}
         self.ex_cate = ["00", "", "17"] # 排除類別00:權證, 17:金融
@@ -65,6 +68,8 @@ class con:
         self.tb_basic = "basicdata"
         self.tb_dohlc = "dailyholc"
         self.tb_minohlc = "dailyminsholc"
+        self.trade_action = "Buy"
+        self.trade_qty = 1
         
         
     def LoginToServerForStock(self, simulate:bool = True, id = None, pwd = None, ca_acct = None):
@@ -172,7 +177,7 @@ class con:
         self.start_time = (datetime.strptime(self.start_time, "%H:%M:%S") + timedelta(minutes = nmin_run)).strftime("%H:%M:%S")
 
         # 這段是防止開盤後run時跑去等開盤時間
-        if datetime.now().strftime("%H:%M:%S") > self.start_time:
+        if datetime.now().strftime("%H:%M:%S") > self.end_time:
             outDF = self.getMinSnapshotData(contract)
             return outDF
 
@@ -206,8 +211,15 @@ class con:
         return minDF
 
     def getKarData(self, stkid:str = None, sdate:str = None, edate:str = None):
+        if sdate:
+            self.startdate = sdate
+            self.enddate = sdate
+        
+        if edate:
+            self.enddate = edate
+
         try:
-            outDF = pd.DataFrame({**self.api.kbars(self.api.Contracts.Stocks[stkid], start = sdate, end = edate)})
+            outDF = pd.DataFrame({**self.api.kbars(self.api.Contracts.Stocks[stkid], start = self.startdate, end = self.enddate)})
             outDF["TradeDate"] = pd.to_datetime(outDF.ts).dt.strftime("%Y%m%d")
             outDF["TradeTime"] = pd.to_datetime(outDF.ts).dt.time
             outDF["DateTime"] = pd.to_datetime(outDF.ts)
@@ -217,30 +229,35 @@ class con:
             return print(exc)
         return outDF
 
-    def StockNormalBuy(self, stkid, buyprice = "now", buyqty:int = 1):
+    def StockNormalBuySell(self, stkid, price = "now", qty:int = 1, action:str = None):
         # Order參數說明  action{Buy, Sell}, price_type{LMT(限價), MKT(市價), MKP(範圍市價)} p.s MKT/MKP只能搭IOC, price = 0
         #               order_type{ROD, IOC, FOK}, order_cond{Cash(現股), MarginTrading(融資), ShortSelling(融券)}
         #               order_lot{Common(整股), Fixing(定盤), Odd(盤後零股), IntradayOdd(盤中零股)}
         Ctract = self.api.Contracts.Stocks[stkid]
-        # 漲停
+        if action:
+            self.trade_action = action
+        if qty:
+            self.trade_qty = qty
+        
         myotype = "ROD"
         myptype = "LMT"
-        myprice = buyprice
-        if buyprice == "up":
+        myprice = price
+        # 漲停
+        if price == "up":
             myprice = Ctract.limit_up
         # 跌停
-        if buyprice == "down":
+        if price == "down":
             myprice = Ctract.limit_down    
         # 現價
-        if buyprice == "now":
+        if price == "now":
             myprice = 0
             myotype = "IOC"
             myptype = "MKT"   
         # 下單    
         order = self.api.Order(
                                 price = myprice, 
-                                quantity = buyqty, 
-                                action = "Buy", 
+                                quantity = self.trade_qty, 
+                                action = self.trade_action, 
                                 price_type = myptype, 
                                 order_type = myotype,
                                 order_cond = "Cash",
@@ -248,7 +265,21 @@ class con:
                                 account = self.api.stock_account
                              )
         self.api.place_order(Ctract, order)
-        return
+
+    def StockCancelOrder(self, stkid:str = "all"):
+        # 先更新一下
+        self.api.update_status(self.api.stock_account)
+   
+        if stkid == "all":
+            for i in range(0, len(self.api.list_trades())):
+                if self.api.list_trades()[i].status.status.value != "Cancelled":
+                    self.api.cancel_order(self.api.list_trades()[i])
+                    id = self.api.list_trades()[i].contract.code
+                    ts = self.api.list_trades()[i].status.order_datetime.strftime("%Y/%m/%d %H:%M:%S")
+                    print(f"己取消股票代碼:{id},於{ts}下的單")
+        else:
+            pass
+
 
     def SubscribeTick(self, contract):
         self.api.quote.subscribe(contract, quote_type = sj.constant.QuoteType.Tick)
@@ -293,6 +324,8 @@ class con:
                 db().updateDFtoDB(DFtoDB, self.tb_basic)
 
         return stkDF.reset_index(drop = True)
+
+
     # & stkDF.update_date == stkDF.update_date.max()
 
     # def connectToServer(loginfile):
@@ -478,7 +511,7 @@ class db:
 
 class file:
     def __init__(self) -> None:
-        self.api = None
+        pass
 
     def getLastFocusStockDF(self):
         filelst = os.listdir(cfg().getValueByConfigFile(key = "dailypath"))
@@ -517,25 +550,28 @@ class stg:
     def __init__(self, DF):
         self.basicDF = db().getStockBasicData()
         self.in_DF = DF
+        self.rows = int(round(DF.StockID.count() * 0.1, 0))
 
     def SMA_Volume(self):
         out_DF =  self.in_DF.loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.Volume >= 5000)]
         return out_DF.merge(self.basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
 
     # 邏輯: 前一交易日成交價 > 60MA & 10MA,且成交量 >= 5000張 
-    def SMA_SAR002_Volume(self):
+    def SMA_SAR_Volume(self):
         out_DF = pd.DataFrame()
         try:
-            out_DF =  self.in_DF.loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.Volume >= 5000) & (self.in_DF.sgl_SAR_002 > 0)]
+            # out_DF =  self.in_DF.loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.Volume >= 5000) & (self.in_DF.sgl_SAR > 0)]
+            out_DF =  self.in_DF.nlargest(self.rows, "Volume").loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.sgl_SAR > 0)]
             out_DF = out_DF.merge(self.basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
         except:
             pass
         return out_DF
 
-    def SMA_SAR002_Volume_MAXMIN120(self):
+    def SMA_SAR_Volume_MAXMIN(self):
         out_DF = pd.DataFrame()
         try:
-            out_DF =  self.in_DF.loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.Volume >= 5000) & (self.in_DF.sgl_SAR_002 > 0) & (self.in_DF.sgl_maxmin_120 > 0)]
+            # out_DF = self.in_DF.loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.Volume >= 5000) & (self.in_DF.sgl_SAR > 0) & (self.in_DF.sgl_MAXMIN > 0)]
+            out_DF = self.in_DF.nlargest(self.rows, "Volume").loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.sgl_SAR > 0) & (self.in_DF.sgl_MAXMIN > 0)]
             out_DF = out_DF.merge(self.basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
         except:
             pass    
@@ -564,7 +600,151 @@ class stg:
         if snap_DF != []:
             file.GeneratorFromDF(snap_DF, f"./data/ActuralTrade/snap_{ymd}.xlsx")
 
+class indicator:
+    def __init__(self, inDF):
+        self.DF = inDF         
+        self.MAtype = "SMA"
+        self.MAperiod = [5, 10, 20, 60]
+        self.MAXMINperiod = [120, 240]
+        self.MAXMINtype = ["MAX", "MIN"]
+        self.indicators = ["SMA", "SAR", "MAXMIN", "BBANDS", "RSI", "MACD", "KDJ"]
 
+    # https://rich01.com/what-is-moving-average-line/
+    def addMAvalueToDF(self, ma_type:str = None, period = None):
+        # talib只有SMA / EMA / WMA
+        if ma_type:
+            self.MAtype = ma_type
+        if period:
+            self.MAperiod = period
+
+        outDF = pd.DataFrame()
+        for stockid, gpDF in self.DF.groupby("StockID"):
+            if type(self.MAperiod) is int:
+                # https://www.kite.com/python/answers/how-to-call-a-function-by-its-name-as-a-string-in-python 用字串弄成Function
+                gpDF[f"{self.MAtype}_{self.MAperiod}"] = eval("talib." + self.MAtype + "(gpDF.Close, timeperiod = self.MAperiod)")
+                outDF = outDF.append(gpDF)
+                continue
+
+            for p in self.MAperiod:
+                gpDF[f"{self.MAtype}_{p}"] = eval("talib." + self.MAtype + "(gpDF.Close, timeperiod = p)")
+            
+            outDF = outDF.append(gpDF)
+        return outDF
+
+     # https://rich01.com/what-is-macd-indicator/
+    
+    def addMACDvalueToDF(self, f_period:int = 12, s_period:int = 26, sign_period:int = 9):
+        # 當柱狀(HIST)圖由負轉正，可視為買進訊號；(代表快線向上穿過慢線，黃金交叉)
+        # 柱狀圖由正轉負，可視為賣出訊號。(代表快線向下穿過慢線，死亡交叉)
+        outDF = pd.DataFrame()
+        for stockid, gpDF in self.DF.groupby("StockID"):
+            gpDF["MACD"], gpDF["MACD_DIF"], gpDF["HIST"] = talib.MACD(gpDF.Close.values, fastperiod = f_period, slowperiod = s_period, signalperiod = sign_period)
+
+            outDF = outDF.append(gpDF)
+        return outDF
+
+    # https://rich01.com/rsi-index-review/
+    def addRSIvalueToDF(self, period:int = 0):
+        outDF = pd.DataFrame()
+        for stockid, gpDF in self.DF.groupby("StockID"):
+            gpDF[f"RSI_{period}"] = talib.RSI(gpDF.Close, timeperiod = period)
+            outDF = outDF.append(gpDF)
+        return outDF
+
+    # https://rich01.com/what-is-bollinger-band/
+    def addBBANDvalueToDF(self, period:int = 10, sigma:int = 2):
+        outDF = pd.DataFrame()
+        for stockid, gpDF in self.DF.groupby("StockID"):
+            gpDF["BBU"], gpDF["BBM"], gpDF["BBL"] = talib.BBANDS(gpDF.Close, timeperiod = period, nbdevup = sigma, nbdevdn = sigma, matype = 0)
+            outDF = outDF.append(gpDF)
+        return outDF
+    
+    def addKDJvalueToDF(self, fk_perd:int = 9, s_perd:int = 3):
+        outDF = pd.DataFrame()
+        for stockid, gpDF in self.DF.groupby("StockID"):
+            gpDF["SlowK"], gpDF["SlowD"] = talib.STOCH(gpDF.High, gpDF.Low, gpDF.Close, fastk_period = fk_perd, slowk_period = s_perd, slowd_period = s_perd)
+            # 求出J值，J = (3 * D) - (2 * K)
+            gpDF["SlowJ"] = list(map(lambda x,y: 3 * x - 2 * y, gpDF.SlowK, gpDF.SlowD))
+
+            outDF = outDF.append(gpDF)
+        return outDF
+
+    def addSARvalueToDF(self, acc:float = 0.02, max:float = 0.2):
+        col = str(acc).replace(".", "")
+        outDF = pd.DataFrame()
+        for stockid, gpDF in self.DF.groupby("StockID"):
+            gpDF[f"SAR_{col}"] = talib.SAR(gpDF.High, gpDF.Low, acceleration = acc, maximum = max)
+            outDF = outDF.append(gpDF)
+        return outDF
+
+    def addMAXMINvalueToDF(self, period:list = None, fn:list = None):
+        if period:
+            self.MAXMINperiod = period
+        
+        if fn:
+            self.MAXMINtype = fn
+
+        outDF = pd.DataFrame()
+        for stockid, gpDF in self.DF.groupby("StockID"):
+            for f in self.MAXMINtype:
+                fn_name = f.lower()
+                for p in self.MAXMINperiod:
+                    gpDF[f"{f}_{p}"] = eval(f"gpDF.Close.rolling(p).{fn_name}()")
+            outDF = outDF.append(gpDF)
+        return outDF
+
+    # 這個是給getSignalByIndicator使用
+    def addMAXMINvalueWithColumnToDF(self, period:list = [], fn_col: dict = {}):
+        if period:
+            self.MAXMINperiod = period
+        
+        if fn_col:
+            self.MAXMINtype = fn_col
+        
+        outDF = pd.DataFrame()
+        for stockid, gpDF in self.DF.groupby("StockID"):
+            for key in self.MAXMINtype:
+                colname = self.MAXMINtype[key]
+                fn_name = key.lower()
+                for p in self.MAXMINperiod:
+                    gpDF[f"{key}_{p}"] = eval(f"gpDF.{colname}.rolling(p).{fn_name}()")
+            outDF = outDF.append(gpDF)
+        return outDF
+
+    def getSignalByIndicator(self, inds:list = []):        
+        if inds:
+            self.indicators = inds
+
+        for ind in self.indicators:
+            colnam = f"sgl_{ind}"
+            self.DF[colnam] = 0
+            
+            if ind.lower() == "sma":
+                self.DF.loc[(self.DF.Close > self.DF.SMA_10) & (self.DF.Close > self.DF.SMA_60), colnam] = 1
+                self.DF.loc[(self.DF.Close < self.DF.SMA_10) & (self.DF.Close < self.DF.SMA_60), colnam] = -1
+            if ind.lower() == "sar":
+                self.DF = self.addMAXMINvalueWithColumnToDF(period = [9, 26, 52], fn_col = {"MAX": "High", "MIN": "Low"})
+                self.DF["tenkan_sen_line"] = (self.DF.MAX_9 + self.DF.MIN_9) / 2
+                self.DF["kijun_sen_line"] = (self.DF.MAX_26 + self.DF.MIN_26) / 2
+                self.DF["senkou_spna_A"] = ((self.DF.tenkan_sen_line + self.DF.kijun_sen_line) / 2).shift(26)
+                self.DF["senkou_spna_B"] = ((self.DF.MAX_52 + self.DF.MIN_52) / 2).shift(26)
+                self.DF["chikou_span"] = self.DF.Close.shift(-26)
+
+                self.DF.loc[(self.DF.Close > self.DF.senkou_spna_A) & (self.DF.Close > self.DF.senkou_spna_B) & (self.DF.Close > self.DF.SAR_002) & (self.DF.Close > self.DF.SAR_003), colnam] = 1
+                self.DF.loc[(self.DF.Close < self.DF.senkou_spna_A) & (self.DF.Close < self.DF.senkou_spna_B) & (self.DF.Close < self.DF.SAR_002) & (self.DF.Close < self.DF.SAR_003), colnam] = -1
+                self.DF = self.DF.drop(columns = ["tenkan_sen_line", "kijun_sen_line", "senkou_spna_A", "senkou_spna_B", "chikou_span", "MAX_9", "MIN_9", "MAX_26", "MIN_26", "MAX_52", "MIN_52"])
+            
+            if ind.lower() == "bbands":
+                self.DF.loc[self.DF.Close > self.DF.BBU, colnam] = -1
+                self.DF.loc[self.DF.Close < self.DF.BBL, colnam] = 1
+
+            if ind.lower() == "maxmin":
+                self.DF.loc[(self.DF.Close >= self.DF.MAX_120) & (self.DF.Close >= self.DF.MAX_240), colnam] = 2
+                self.DF.loc[(self.DF.Close >= self.DF.MAX_120) & (self.DF.Close <  self.DF.MAX_240), colnam] = 1
+                self.DF.loc[(self.DF.Close <= self.DF.MIN_120) & (self.DF.Close >  self.DF.MIN_240), colnam] = -1
+                self.DF.loc[(self.DF.Close <= self.DF.MIN_120) & (self.DF.Close <= self.DF.MIN_240), colnam] = -2
+        
+        return self.DF
 
 class tool:
 
@@ -695,3 +875,4 @@ class craw:
                 item = [item[i] for i in neworder]
             itemlist.append(item)
         return itemlist
+# %%

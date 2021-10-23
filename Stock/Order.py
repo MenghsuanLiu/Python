@@ -5,6 +5,7 @@ from shioaji import constant
 from datetime import datetime, date, time
 from util import con, file, stg, tool, db
 
+
 odr = []
 deal = []
 def placeOrderCallBack(order_state: constant.OrderState, order: dict):
@@ -49,10 +50,10 @@ api.set_order_callback(placeOrderCallBack)
 # 3.依策略決定下單清單
 stkDF_new = file().getLastFocusStockDF()
 stkDF = pd.DataFrame()
-stkDF = stg(stkDF_new).SMA_SAR002_Volume_MAXMIN120()
+stkDF = stg(c).SMA_SAR_Volume_MAXMIN()
 if stkDF.empty:
-    stkDF = stg(stkDF_new).SMA_SAR002_Volume()
-
+    stkDF = stg(stkDF_new).SMA_SAR_Volume()
+# %%
 # 4.組合需要抓價量的Stocks
 contracts = con(api).getContractForAPI(stkDF)
 
@@ -74,8 +75,8 @@ BuyList = tool.DFcolumnToList(stgBuyDF, "StockID")
 # BuyList = random.choices(BuyList, k = random.choice(range(1,len(BuyList))))
 
 for id in BuyList:
-    con(api).StockNormalBuy(stkid = id, buyprice = "down", buyqty = 1)
-
+    con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Buy")
+# %%
 tool.WaitingTimeDecide(check_secs)
 
 # 8.固定時間觀察訂單狀況,決定策略datetime.now()大約會在09:05
@@ -86,6 +87,18 @@ t = 0
 trade_list = []
 while True:
     t += 1
+    # 收盤就離開了
+    if t == dotimes:
+        break
+    
+    if t == 150:
+        con(api).StockCancelOrder()
+
+    # 收盤前5mins要清倉
+    if t == bf_cls5:
+        pass    
+
+
     api.update_status(api.stock_account)
     for i in range(0, len(api.list_trades())):
         l = []
@@ -98,15 +111,7 @@ while True:
         l.append(api.list_trades()[i].status.order_datetime.strftime("%Y/%m/%d"))
         l.append(api.list_trades()[i].status.order_datetime.strftime("%H:%M:%S"))
         trade_list.append(l)
-
-    # 收盤前5mins要清倉
-    if t == bf_cls5:
-        pass
-    
-    # 收盤就離開了
-    if t == dotimes:
-        break
-    
+       
     # 休息時間
     tool.WaitingTimeDecide(check_secs)
 

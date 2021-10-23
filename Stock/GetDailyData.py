@@ -7,8 +7,8 @@ import time
 # from talib import abstract
 from datetime import date, timedelta, datetime
 from bs4 import BeautifulSoup as bs
-from util import con, cfg, db, file, tool, craw
-
+from util import con, cfg, db, file, tool, craw, stg
+from util import indicator as ind
 
 def writeDailyRawDataDB(api = None, StkDF = None):
     tb = cfg().getValueByConfigFile(key = "tb_daily")
@@ -33,11 +33,24 @@ def writeDailyRawDataDB(api = None, StkDF = None):
         # 每日的OHLC資料
         if not DkBarDF.empty:
             db().updateDFtoDB(DkBarDF, tb_name = tb)
-        # 每分的OHLC資料
-        if not kBarDF.empty:
-            tb = cfg().getValueByConfigFile(key = "tb_mins")
-            db().updateDFtoDB(kBarDF, tb_name = tb)
-    
+
+def writeDailyMinsKbarDataToDB(api = None):
+    tb = cfg().getValueByConfigFile(key = "tb_mins")
+    sql = f"SELECT MAX(TradeDate) as TradeDate FROM {tb} group by StockID"
+    lastday = db().selectDatatoDF(sql_statment = sql).iloc[0,0] + timedelta(days = 1)
+    stock_lst = tool.DFcolumnToList(db().selectDatatoDF(cfg().getValueByConfigFile(key = "tb_basic")), colname = "StockID")
+    if lastday > date.today():
+        return print(f"資料庫Table:{tb}的資料己是最新的")
+
+    stkDF = pd.DataFrame()
+    for id in stock_lst:
+        stkDF = con(api).getKarData(stkid = id, sdate = lastday.strftime("%Y-%m-%d"), edate = date.today().strftime("%Y-%m-%d"))
+        stkDF = stkDF.filter(items = ["StockID",  "TradeDate", "TradeTime", "Open", "High", "Low", "Close", "Volume"])
+        if stkDF.empty:
+            break
+        print(id)
+        db().updateDFtoDB(stkDF, tb_name = tb)
+
 def writeLegalPersonDailyVolumeDB(stkBsData = None):
     # 取得TabName
     tb = cfg().getValueByConfigFile(key = "tb_volume")
@@ -195,15 +208,28 @@ def mergeVolumeDataDB(in_DF = None):
     # else:
     #     print(f"沒有取到{tb_vol}的資料!!")
 
+def getLastPeriodDF(in_DF = None, period:int = 5):
+    outDF = in_DF.groupby("StockID").tail(period)
+    return outDF
+
 def writeResultDataToFile(fullDF = None):
     max_ymd = fullDF.TradeDate.max().strftime("%Y%m%d")
     filename = cfg().getValueByConfigFile(key = "dailypath") + "/" + cfg().getValueByConfigFile(key = "resultname") + f"_{max_ymd}.xlsx"
 
-    max_ymd = fullDF.TradeDate.max()
-    outDF = fullDF[fullDF.TradeDate == max_ymd].sort_values(by = "TradeDate", ascending = False).filter(items = (["StockID", "StockName", "上市/上櫃", "投信(股數)", "外資(股數)", "自營商(股數)", "TradeDate", "Close", "Volume", ] + [x for x in fullDF.columns[fullDF.columns.str.contains("sgl")]]))
+    # max_ymd = fullDF.TradeDate.max()
+    # outDF = fullDF[fullDF.TradeDate == max_ymd].sort_values(by = "TradeDate", ascending = False).filter(items = (["StockID", "StockName", "上市/上櫃", "投信(股數)", "外資(股數)", "自營商(股數)", "TradeDate", "Close", "Volume", ] + [x for x in fullDF.columns[fullDF.columns.str.contains("sgl")]]))
+    outDF = getLastPeriodDF(in_DF = fullDF, period = 1).filter(items = (["StockID", "StockName", "上市/上櫃", "投信(股數)", "外資(股數)", "自營商(股數)", "TradeDate", "Close", "Volume", ] + [x for x in fullDF.columns[fullDF.columns.str.contains("sgl")]]))
     file.GeneratorFromDF(outDF, filename)
     
-    
+    filename = cfg().getValueByConfigFile(key = "dailypath") + "/Strategy" + f"_{max_ymd}.xlsx"
+    stgDF = pd.DataFrame()
+    stgDF = stg(outDF).SMA_SAR_Volume_MAXMIN()
+    if stgDF.empty:
+        stgDF = stg(outDF).SMA_SAR_Volume()
+
+    file.GeneratorFromDF(stgDF, filename)
+
+
     # # 找出這次資料的最後一筆日期
     # df = dframe.sort_values(by = "TradeDate", ascending = False)
     # df_ymd = df["TradeDate"].head(1).values[0].strftime("%Y%m%d")
@@ -640,7 +666,7 @@ def mergeVolumeDataFile(dframe, cfgname):
 
 # markets = ["TSE", "OTC"]
 
-keyindex = ["SMA", "BBands", "SAR_002", "SAR_003", "maxmin_120", "maxmin_240", "RSI"]
+# keyindex = ["SMA", "BBands", "SAR_002", "SAR_003", "maxmin_120", "maxmin_240", "RSI", "MACD", "KDJ"]
 # stocks = ["OTC"]
 # cfg_fname = "./config/config.json"
 
@@ -654,19 +680,25 @@ writeLegalPersonDailyVolumeDB(BsData)
 # 取得每天的成交資料(後面數字是往回抓幾天)
 stkDF = getStockDailyDataFromDB(BsData, 250)
 
-# stk_df = getStockMACD(stk_df, [12, 26, 9])
+stkDFwithInd = ind(stkDF).addMAvalueToDF()  # Default ma_type = SAR, period = [5, 10, 20, 60]
+stkDFwithInd = ind(stkDFwithInd).addBBANDvalueToDF()   # Default period = 10, sigma = 2
+stkDFwithInd = ind(stkDFwithInd).addSARvalueToDF(acc = 0.02, max = 0.2)   # Default acc = 0.02, max = 0.2
+stkDFwithInd = ind(stkDFwithInd).addSARvalueToDF(acc = 0.03, max = 0.3)   # Default acc = 0.02, max = 0.2
+stkDFwithInd = ind(stkDFwithInd).addMAXMINvalueToDF()   # Default period = [120, 240], fn = ["MAX", "MIN"]
+stkDFwithInd = ind(stkDFwithInd).addRSIvalueToDF(period = 6)
+stkDFwithInd = ind(stkDFwithInd).addRSIvalueToDF(period = 12)
+stkDFwithInd = ind(stkDFwithInd).addMACDvalueToDF() # Default f_period = 12, s_period = 26, sign_period = 9
+stkDFwithInd = ind(stkDFwithInd).addKDJvalueToDF() # Default fk_perd = 9, s_perd = 3
 
-stkDF = getStockSMA(stkDF, [5, 10, 20, 60])
-stkDF = getStockBBands(stkDF, 10, 2) 
-stkDF = getStockSAR(stkDF, 0.02, 0.2)
-stkDF = getStockSAR(stkDF, 0.03, 0.3)
-stkDF = getStockMaxMin(stkDF, [120, 240], ["max", "min"])
-stkDF = getStockRSI(stkDF, [6, 12])
+stkDFwithInd = getLastPeriodDF(stkDFwithInd, 100)   # 後面算指標時會用到52天前的資料
+stkDFwithInd = ind(stkDFwithInd).getSignalByIndicator(inds = ["SMA", "SAR", "MAXMIN", "BBANDS"]) # Default = ["SMA", "SAR", "MAXMIN", "BBands", "RSI", "MACD", "KDJ"]
+writeResultDataToFile(stkDFwithInd)
+writeDailyMinsKbarDataToDB(api)
 
-for k in keyindex:
-    stkDF = getSignal(stkDF, k)
 
-writeResultDataToFile(stkDF)
+# for k in keyindex:
+#     stkDF = getSignal(stkDF, k)
+
 
 
 

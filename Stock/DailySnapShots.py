@@ -114,9 +114,9 @@ api = con().LoginToServerForStock(simulate = False)
 # 3.依策略決定下單清單
 stkDF_new = file().getLastFocusStockDF()
 stkDF = pd.DataFrame()
-stkDF = stg(stkDF_new).SMA_SAR002_Volume_MAXMIN120()
+stkDF = stg(stkDF_new).SMA_SAR_Volume_MAXMIN()
 if stkDF.empty:
-    stkDF = stg(stkDF_new).SMA_SAR002_Volume()
+    stkDF = stg(stkDF_new).SMA_SAR_Volume()
 
 
 # 4.組合需要抓價量的Stocks

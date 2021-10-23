@@ -14,6 +14,7 @@ day = date.today().strftime("%Y-%m-%d")
 # day = "2021-10-15"
 api = con().LoginToServerForStock(simulate = False)
 tb = cfg().getValueByConfigFile(key = "tb_mins")
+# %%
 
 stock_lst = tool.DFcolumnToList(db().selectDatatoDF(cfg().getValueByConfigFile(key = "tb_basic")), colname = "StockID")
 
