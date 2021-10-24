@@ -187,8 +187,8 @@ class con:
                 break
         return outDF 
 
-    def getMinsSnapshotData(self, contract = None, start: int = 10):
-        self.start_time = (datetime.strptime(self.start_time, "%H:%M:%S") + timedelta(minutes = start)).strftime("%H:%M:%S")
+    def getMinsSnapshotData(self, contract = None, times: int = 10, usecs:int = 60):
+        self.start_time = (datetime.strptime(self.start_time, "%H:%M:%S") + timedelta(minutes = times)).strftime("%H:%M:%S")
         outDF = pd.DataFrame()
         # 收盤後只要取一次就好
         if datetime.now().time() > datetime.strptime(self.end_time, "%H:%M:%S").time() or datetime.today().weekday() in (5, 6):
@@ -199,7 +199,7 @@ class con:
             outDF = outDF.append(self.getMinSnapshotData(contract))            
             if datetime.now().strftime("%H:%M:%S") == self.start_time:
                 break
-            tool.WaitingTimeDecide(60)
+            tool.WaitingTimeDecide(usecs)
 
     def getMinSnapshotData(self, ctract:list):
         minDF = pd.DataFrame(self.api.snapshots(ctract)).filter(items = ["code", "ts", "open", "high", "low", "close", "volume" ]).rename(columns = {"code": "StockID", "ts": "DateTime", "open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"})
@@ -550,22 +550,32 @@ class stg:
     def __init__(self, DF):
         self.basicDF = db().getStockBasicData()
         self.in_DF = DF
-        self.rows = int(round(DF.StockID.count() * 0.1, 0))
+        self.rows = int(round(DF.StockID.count() * 0.1, 0)) # 前10%的交易量
+        self.noexe_method = None
 
     def SMA_Volume(self):
         out_DF =  self.in_DF.loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.Volume >= 5000)]
         return out_DF.merge(self.basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
+
+    def getFromFocusOnByStrategy(self):
+        self.SMA_SAR_Volume_MAXMIN()
+        if self.noexe_method == None:
+            self.SMA_SAR_Volume()
+        return self.in_DF
 
     # 邏輯: 前一交易日成交價 > 60MA & 10MA,且成交量 >= 5000張 
     def SMA_SAR_Volume(self):
         out_DF = pd.DataFrame()
         try:
             # out_DF =  self.in_DF.loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.Volume >= 5000) & (self.in_DF.sgl_SAR > 0)]
-            out_DF =  self.in_DF.nlargest(self.rows, "Volume").loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.sgl_SAR > 0)]
+            out_DF = self.in_DF.nlargest(self.rows, "Volume").loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.sgl_SAR > 0)]
             out_DF = out_DF.merge(self.basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
         except:
             pass
-        return out_DF
+
+        if not out_DF.empty:
+            self.in_DF = out_DF
+            self.noexe_method = "X"
 
     def SMA_SAR_Volume_MAXMIN(self):
         out_DF = pd.DataFrame()
@@ -574,8 +584,11 @@ class stg:
             out_DF = self.in_DF.nlargest(self.rows, "Volume").loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.sgl_SAR > 0) & (self.in_DF.sgl_MAXMIN > 0)]
             out_DF = out_DF.merge(self.basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
         except:
-            pass    
-        return out_DF
+            pass
+
+        if not out_DF.empty:
+            self.in_DF = out_DF
+            self.noexe_method = "X"
         
     # 買進策略:5min的Close < 前一天的Close * 1.05
     def BuyStrategyFromOpenSnapDF_01(self, snap_DF):
@@ -633,6 +646,7 @@ class indicator:
 
      # https://rich01.com/what-is-macd-indicator/
     
+    # https://rich01.com/what-is-macd-indicator/
     def addMACDvalueToDF(self, f_period:int = 12, s_period:int = 26, sign_period:int = 9):
         # 當柱狀(HIST)圖由負轉正，可視為買進訊號；(代表快線向上穿過慢線，黃金交叉)
         # 柱狀圖由正轉負，可視為賣出訊號。(代表快線向下穿過慢線，死亡交叉)
@@ -693,6 +707,12 @@ class indicator:
             outDF = outDF.append(gpDF)
         return outDF
 
+    def addMFIvalueToDF(self):
+        outDF = pd.DataFrame()
+        for stockid, gpDF in self.DF.groupby("StockID"):
+            gpDF["MFI"] = talib.MFI(gpDF.High, gpDF.Low, gpDF.Close, gpDF.Volume)
+            outDF = outDF.append(gpDF)
+        return outDF
     # 這個是給getSignalByIndicator使用
     def addMAXMINvalueWithColumnToDF(self, period:list = [], fn_col: dict = {}):
         if period:
@@ -709,7 +729,16 @@ class indicator:
                 for p in self.MAXMINperiod:
                     gpDF[f"{key}_{p}"] = eval(f"gpDF.{colname}.rolling(p).{fn_name}()")
             outDF = outDF.append(gpDF)
-        return outDF
+        self.DF = outDF
+
+    def addShiftColumnValueToDF(self, colname:str = None, sfnum:int = 1):
+        outDF = pd.DataFrame()
+        for stockid, gpDF in self.DF.groupby("StockID"):
+            gpDF[f"{colname}_shift{sfnum}"] = eval(f"gpDF.{colname}.shift({sfnum})")
+            outDF = outDF.append(gpDF)
+        self.DF = outDF
+        
+        self.DF["HIST_SHIFT_1"] = self.DF.HIST.shift(1)
 
     def getSignalByIndicator(self, inds:list = []):        
         if inds:
@@ -723,7 +752,7 @@ class indicator:
                 self.DF.loc[(self.DF.Close > self.DF.SMA_10) & (self.DF.Close > self.DF.SMA_60), colnam] = 1
                 self.DF.loc[(self.DF.Close < self.DF.SMA_10) & (self.DF.Close < self.DF.SMA_60), colnam] = -1
             if ind.lower() == "sar":
-                self.DF = self.addMAXMINvalueWithColumnToDF(period = [9, 26, 52], fn_col = {"MAX": "High", "MIN": "Low"})
+                self.addMAXMINvalueWithColumnToDF(period = [9, 26, 52], fn_col = {"MAX": "High", "MIN": "Low"})
                 self.DF["tenkan_sen_line"] = (self.DF.MAX_9 + self.DF.MIN_9) / 2
                 self.DF["kijun_sen_line"] = (self.DF.MAX_26 + self.DF.MIN_26) / 2
                 self.DF["senkou_spna_A"] = ((self.DF.tenkan_sen_line + self.DF.kijun_sen_line) / 2).shift(26)
@@ -735,15 +764,32 @@ class indicator:
                 self.DF = self.DF.drop(columns = ["tenkan_sen_line", "kijun_sen_line", "senkou_spna_A", "senkou_spna_B", "chikou_span", "MAX_9", "MIN_9", "MAX_26", "MIN_26", "MAX_52", "MIN_52"])
             
             if ind.lower() == "bbands":
-                self.DF.loc[self.DF.Close > self.DF.BBU, colnam] = -1
-                self.DF.loc[self.DF.Close < self.DF.BBL, colnam] = 1
+                # ❶股價由下往上穿越下線：股價可能短期會反轉。
+                # ❷股價由下往上穿越中線：股價可能會加速向上，是買進訊號。
+                # ❸股價在中線與上線之間：代表目前為多頭行情。
+                # ➍股價由上往下跌破上線：暗示上漲趨勢結束，是賣出的訊號。
+                # ❺股價由上往下跌破中線：股價可能會下跌，是賣出訊號。
+                # ❻股價在中線與下線之間：代表目前為空頭行情。
+                self.addShiftColumnValueToDF(colname = "Close", sfnum = 1)
+                self.DF.loc[(self.DF.Close > self.DF.Close_shift1) & (self.DF.Close > self.DF.BBL), colnam] = 2
+                self.DF.loc[(self.DF.Close > self.DF.Close_shift1) & (self.DF.Close > self.DF.BBM), colnam] = 1
+                self.DF.loc[(self.DF.Close < self.DF.Close_shift1) & (self.DF.Close < self.DF.BBU), colnam] = -2
+                self.DF.loc[(self.DF.Close < self.DF.Close_shift1) & (self.DF.Close < self.DF.BBM), colnam] = -1
+                # self.DF.loc[self.DF.Close > self.DF.BBU, colnam] = -1
+                # self.DF.loc[self.DF.Close < self.DF.BBL, colnam] = 1
 
             if ind.lower() == "maxmin":
                 self.DF.loc[(self.DF.Close >= self.DF.MAX_120) & (self.DF.Close >= self.DF.MAX_240), colnam] = 2
                 self.DF.loc[(self.DF.Close >= self.DF.MAX_120) & (self.DF.Close <  self.DF.MAX_240), colnam] = 1
                 self.DF.loc[(self.DF.Close <= self.DF.MIN_120) & (self.DF.Close >  self.DF.MIN_240), colnam] = -1
                 self.DF.loc[(self.DF.Close <= self.DF.MIN_120) & (self.DF.Close <= self.DF.MIN_240), colnam] = -2
-        
+
+            if ind.lower() == "macd":
+                self.addShiftColumnValueToDF(colname = "HIST", sfnum = 1)
+                self.DF.loc[(self.DF.HIST >= 0) & (self.DF.HIST_shift1 < 0), colnam] = 1   # 前一期是-,這一期是+
+                self.DF.loc[(self.DF.HIST < 0) & (self.DF.HIST_shift1 >= 0), colnam] = -1   # 前一期是+,這一期是-
+                self.DF = self.DF.drop(columns = ["HIST_shift1"])
+
         return self.DF
 
 class tool:
@@ -875,4 +921,4 @@ class craw:
                 item = [item[i] for i in neworder]
             itemlist.append(item)
         return itemlist
-# %%
+

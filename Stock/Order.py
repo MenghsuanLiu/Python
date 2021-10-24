@@ -50,9 +50,8 @@ api.set_order_callback(placeOrderCallBack)
 # 3.依策略決定下單清單
 stkDF_new = file().getLastFocusStockDF()
 stkDF = pd.DataFrame()
-stkDF = stg(c).SMA_SAR_Volume_MAXMIN()
-if stkDF.empty:
-    stkDF = stg(stkDF_new).SMA_SAR_Volume()
+stkDF = stg(stkDF_new).getFromFocusOnByStrategy()
+
 # %%
 # 4.組合需要抓價量的Stocks
 contracts = con(api).getContractForAPI(stkDF)
@@ -71,7 +70,6 @@ stgBuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_01(minSnapDF)
 BuyList = tool.DFcolumnToList(stgBuyDF, "StockID")
 
 # 7.下單(測試時抓n個出來買就好)
-# BuyList = random.sample(BuyList, 10)
 # BuyList = random.choices(BuyList, k = random.choice(range(1,len(BuyList))))
 
 for id in BuyList:

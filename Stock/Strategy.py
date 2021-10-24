@@ -11,8 +11,17 @@ import pandas as pd
 from plotly.offline import iplot, init_notebook_mode
 import plotly.graph_objs as go
 
+import talib
+
 sql = "SELECT StockID, TradeDate, Open, High, Low, Close, Volume FROM dailyholc WHERE StockID in ('2330', '2303')"
 stkdailyDF = db().selectDatatoDF(sql_statment = sql)
+stkdailyDF = ind(stkdailyDF).addMFIvalueToDF()
+# %%
+
+
+stkdailyDF = ind(stkdailyDF).getSignalByIndicator(inds = ["MACD"])
+
+
 stkdailyDF = ind(stkdailyDF).addMAvalueToDF()
 stkdailyDF = ind(stkdailyDF).addSARvalueToDF(acc = 0.02, max = 0.2)   # Default acc = 0.02, max = 0.2
 stkdailyDF = ind(stkdailyDF).addSARvalueToDF(acc = 0.03, max = 0.3)   # Default acc = 0.02, max = 0.2

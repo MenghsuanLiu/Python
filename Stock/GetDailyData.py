@@ -1,12 +1,6 @@
 # %%
 import pandas as pd
-import requests as req
-import talib
-import os
-import time
-# from talib import abstract
 from datetime import date, timedelta, datetime
-from bs4 import BeautifulSoup as bs
 from util import con, cfg, db, file, tool, craw, stg
 from util import indicator as ind
 
@@ -218,15 +212,12 @@ def writeResultDataToFile(fullDF = None):
 
     # max_ymd = fullDF.TradeDate.max()
     # outDF = fullDF[fullDF.TradeDate == max_ymd].sort_values(by = "TradeDate", ascending = False).filter(items = (["StockID", "StockName", "上市/上櫃", "投信(股數)", "外資(股數)", "自營商(股數)", "TradeDate", "Close", "Volume", ] + [x for x in fullDF.columns[fullDF.columns.str.contains("sgl")]]))
-    outDF = getLastPeriodDF(in_DF = fullDF, period = 1).filter(items = (["StockID", "StockName", "上市/上櫃", "投信(股數)", "外資(股數)", "自營商(股數)", "TradeDate", "Close", "Volume", ] + [x for x in fullDF.columns[fullDF.columns.str.contains("sgl")]]))
+    outDF = getLastPeriodDF(in_DF = fullDF, period = 1).filter(items = (["StockID", "StockName", "上市/上櫃", "投信(股數)", "外資(股數)", "自營商(股數)", "TradeDate", "Close", "Volume", "MFI", ] + [x for x in fullDF.columns[fullDF.columns.str.contains("sgl")]]))
     file.GeneratorFromDF(outDF, filename)
     
     filename = cfg().getValueByConfigFile(key = "dailypath") + "/Strategy" + f"_{max_ymd}.xlsx"
     stgDF = pd.DataFrame()
-    stgDF = stg(outDF).SMA_SAR_Volume_MAXMIN()
-    if stgDF.empty:
-        stgDF = stg(outDF).SMA_SAR_Volume()
-
+    stgDF = stg(outDF).getFromFocusOnByStrategy()
     file.GeneratorFromDF(stgDF, filename)
 
 
@@ -260,417 +251,6 @@ def writeResultDataToFile(fullDF = None):
 
 
 
-
-
-def getBSobj(YYYYMMDD, market, cfgname):
-    head_info = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
-    
-    # 上市
-    if market == "TSE":
-        # 網頁取得自 https://www.twse.com.tw/zh/page/trading/fund/T86.html (列印 / HTML)
-        # url = f"https://www.twse.com.tw/fund/T86?response=html&date={YYYYMMDD}&selectType=ALL"
-        url = f"https://www.twse.com.tw/fund/T86?response=html&date={YYYYMMDD}&selectType=ALLBUT0999"
-    # 上櫃
-    if market == "OTC":
-        # 網頁取得自 https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge.php?l=zh-tw (列印/匯出HTML)
-        ymd = f"{str(int(YYYYMMDD[0:4]) - 1911)}/{YYYYMMDD[4:6]}/{YYYYMMDD[6:8]}"
-        url = f"https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&o=htm&se=EW&t=D&d={ymd}&s=0,asc"
-    # 處理網址
-    urlwithhead = req.get(url, headers = head_info)
-    urlwithhead.encoding = "utf-8"
-    # 抓config檔決定是否要產生File
-    genfile = cfg.getConfigValue(cfgname, "genhtml")
-
-    # 判斷是否要產生File,不產生就直接把BS Obj傳出去
-    if genfile != "":
-        ## 寫網頁原始碼到檔案中cfg是config檔的路徑及檔名
-        wpath = cfg.getConfigValue(cfgname, "webpath")
-        # 產生出的檔案存下來
-        ## 建立目錄,不存在才建...
-        if os.path.exists(wpath) == False:
-            os.makedirs(wpath)
-        rootlxml = bs(urlwithhead.text, "lxml")
-        with open(f"{wpath}/{market}_三大法人買賣超日報_{YYYYMMDD}.html", mode="w", encoding="UTF-8") as web_html:
-            web_html.write(rootlxml.prettify())
-
-    #傳出BeautifulSoup物件     
-    return bs(urlwithhead.text, "lxml")
-
-def getTBobj(bsobj, tbID, market, cfgname):
-    tb = bsobj.find_all("table")[tbID]
-    # 抓config檔決定是否要產生File
-    genfile = cfg.getConfigValue(cfgname, "genhtml")
-    # 判斷是否要產生File,不產生就直接把BS Obj傳出去
-    if genfile != "":
-        ## 寫網頁原始碼到檔案中cfg是config檔的路徑及檔名
-        wpath = cfg.getConfigValue(cfgname, "webpath")
-        # 產生出的檔案存下來
-        ## 建立目錄,不存在才建...
-        if os.path.exists(wpath) == False:
-            os.makedirs(wpath)
-        with open(f"{wpath}/{market}_table.html", mode="w", encoding="UTF-8") as web_html:
-            web_html.write(tb.prettify())
-    return tb
-
-def getHeaderLine(tbObj):
-    headtext = []
-    for head in tbObj.select("table > thead > tr:nth-child(2) > td"):
-        headtext.append(head.text)
-    return headtext
-
-
-def getStockSMA(dframe, day_list):
-    first = True
-    for stockid, gp_df in dframe.groupby("StockID"):
-        if type(day_list) is int:
-            gp_df[f"MA_{day_list}"] = talib.SMA(gp_df.Close, timeperiod = day_list)
-        else:
-            for madays in day_list:
-                gp_df[f"MA_{madays}"] = talib.SMA(gp_df.Close, timeperiod = madays)
-        if first == True:
-            df = gp_df
-            first = False
-        else:
-            df = df.append(gp_df)  
-    return df
-
-def getStockBBands(dframe, period, stdNbr):
-    first = True
-    for stockid, gp_df in dframe.groupby("StockID"):
-        gp_df["upperband"], gp_df["middleband"], gp_df["lowerband"] = talib.BBANDS( gp_df["Close"], timeperiod = period, nbdevup = stdNbr, nbdevdn = stdNbr, matype = 0)
-
-        if first == True:
-            df = gp_df
-            first = False
-        else:
-            df = df.append(gp_df)  
-    return df
-
-def getStockSAR(dframe, acc, max):
-    first = True
-    title = str(acc).replace(".", "")
-    for stockid, gp_df in dframe.groupby("StockID"):
-        gp_df[f"SAR_{title}"] = talib.SAR(gp_df["High"], gp_df["Low"], acceleration = acc, maximum = max)
-
-        if first == True:
-            df = gp_df
-            first = False
-        else:
-            df = df.append(gp_df)  
-    return df
-
-def getStockMaxMin(dframe, day_list, type_list):
-    first = True
-    for stockid, gp_df in dframe.groupby("StockID"):
-        for fn in type_list:
-            for days in day_list:
-                if fn.lower() == "max":
-                    gp_df[f"{fn}_{days}"] = gp_df["Close"].rolling(days).max()
-                if fn.lower() == "min":
-                    gp_df[f"{fn}_{days}"] = gp_df["Close"].rolling(days).min()
-        if first == True:
-            df = gp_df
-            first = False
-        else:
-            df = df.append(gp_df)
-    return df
-
-def getStockMACD(dframe, day_list):
-    first = True
-    for stockid, gp_df in dframe.groupby("StockID"):
-        for d in day_list:
-            # 调用talib计算指数移动平均线的值
-            gp_df[f"EMA{d}"] = talib.EMA(gp_df.Close, timeperiod = d)
-
-        # 调用talib计算MACD指标
-        gp_df["MACD"], gp_df["MACDsignal"], gp_df["MACDhist"] = talib.MACD(gp_df.Close, fastperiod = day_list[0], slowperiod = day_list[1], signalperiod = day_list[2])
-        
-        if first == True:
-            df = gp_df
-            first = False
-        else:
-            df = df.append(gp_df)     
-    return df
-
-# RSI計算=>https://www.moneydj.com/kmdj/wiki/wikiviewer.aspx?keyid=f2aa7c2e-f6b5-447f-b5b7-d77572aa4724
-def getStockRSI(dframe, day_list):
-    DFrsi = pd.DataFrame()
-    for stockid, gp_df in dframe.groupby("StockID"):
-        if type(day_list) is int:
-            gp_df[f"RSI_{day_list}"] = talib.RSI(gp_df.Close, timeperiod = day_list)
-        else:
-            for rsidays in day_list:
-                gp_df[f"RSI_{rsidays}"] = talib.RSI(gp_df.Close, timeperiod = rsidays)
-        DFrsi = DFrsi.append(gp_df)
-    return DFrsi
-
-def getSignal(dataframe, tatype):
-    colnam = f"sgl_{tatype}"
-    dataframe[colnam] = 0
-    if tatype.lower() == "sma":
-        dataframe.loc[(dataframe.Close > dataframe.MA_10) & (dataframe.Close > dataframe.MA_60), colnam] = 1
-        dataframe.loc[(dataframe.Close < dataframe.MA_10) & (dataframe.Close < dataframe.MA_60), colnam] = -1
-    if tatype.lower() == "bbands":
-        dataframe.loc[dataframe.Close > dataframe.upperband, colnam] = -1
-        dataframe.loc[dataframe.Close < dataframe.lowerband, colnam] = 1
-    if tatype[0:3].lower() == "sar":
-        high_9 = dataframe.High.rolling(9).max()
-        low_9 = dataframe.Low.rolling(9).min()
-        dataframe["tenkan_sen_line"] = (high_9 + low_9) / 2
-        high_26 = dataframe.High.rolling(26).max()
-        low_26 = dataframe.Low.rolling(26).min()
-        dataframe["kijun_sen_line"] = (high_26 + low_26) / 2
-        dataframe["senkou_spna_A"] = ((dataframe.tenkan_sen_line + dataframe.kijun_sen_line) / 2).shift(26)
-        high_52 = dataframe.High.rolling(52).max()
-        low_52 = dataframe.High.rolling(52).min()
-        dataframe["senkou_spna_B"] = ((high_52 + low_52) / 2).shift(26)
-        dataframe["chikou_span"] = dataframe.Close.shift(-26)
-        if tatype[-3:] == "002":
-            dataframe.loc[(dataframe.Close > dataframe.senkou_spna_A) & (dataframe.Close > dataframe.senkou_spna_B) & (dataframe.Close > dataframe.SAR_002), colnam] = 1
-            dataframe.loc[(dataframe.Close < dataframe.senkou_spna_A) & (dataframe.Close < dataframe.senkou_spna_B) & (dataframe.Close < dataframe.SAR_002), colnam] = -1
-        if tatype[-3:] == "003":
-            dataframe.loc[(dataframe.Close > dataframe.senkou_spna_A) & (dataframe.Close > dataframe.senkou_spna_B) & (dataframe.Close > dataframe.SAR_003), colnam] = 1
-            dataframe.loc[(dataframe.Close < dataframe.senkou_spna_A) & (dataframe.Close < dataframe.senkou_spna_B) & (dataframe.Close < dataframe.SAR_003), colnam] = -1
-        dataframe = dataframe.drop(columns = ["tenkan_sen_line", "kijun_sen_line", "senkou_spna_A", "senkou_spna_B", "chikou_span"])
-    if tatype[0:6].lower() == "maxmin":
-        dataframe.loc[(dataframe["Close"] >= dataframe[f"max_{tatype[-3:]}"]), colnam] = 1
-        dataframe.loc[(dataframe["Close"] <= dataframe[f"min_{tatype[-3:]}"]), colnam] = -1
-    # 短天期的RSI由下往上突破長天期的RSI線時，表示走勢有轉而增強的跡象，可以考慮買進。反之若短天期的RSI由上往下突破時，則走勢轉弱，考慮賣出    
-    if tatype.lower() == "rsi":
-        dataframe.loc[(dataframe.RSI_6 > dataframe.RSI_12), colnam] = 1
-        dataframe.loc[(dataframe.RSI_6 > dataframe.RSI_12), colnam] = -1
-    return dataframe
-
-# def getStockKD(dframe):
-#     for stockid, gp_df in dframe.groupby("StockID"):
-#         gp_df["KD"] = abstract.STOCH(gp_df)
-
-
-# File的部份目前未使用
-def getStockDailyDataFile(StkDF, cfgname, days):
-    stk_lst = StkDF["StockID"].astype(str).to_list()
-    fpath = cfg.getConfigValue(cfgname, "filepath")
-    fpath = f"{fpath}/" + cfg.getConfigValue(cfgname, "hisname") + ".csv"
-    # 讀取資料
-    df_history = pd.read_csv(fpath, low_memory = False)
-    # StockID由int轉str
-    df_history["StockID"] = df_history["StockID"].apply(str)
-    # 只留下這次要的Stock List
-    df_history = df_history[df_history.StockID.isin(stk_lst)]
-    # 轉換日期格式
-    df_history["ts_date"] = pd.to_datetime(df_history["ts_date"], format = "%Y-%m-%d").dt.date
-
-    # 只留下每個股票後250筆,要用後...後面算數SMA類的資料才會對
-    first = True
-    for stockid, gp_df in df_history.groupby("StockID"):
-        # stk_up_date = StkDF[StkDF["StockID"] == stockid].update_date.values[0]
-        gp_df = gp_df.sort_values(by = "ts_date", ascending = True)
-        # 今天沒有交易資料就不要留這支
-        # if gp_df["ts_date"].tail(1).values[0].strftime("%Y/%m/%d") != stk_up_date:
-        #     continue
-        gp_df = gp_df.tail(days)
-        if first == True:
-            df = gp_df
-            first = False
-        else:
-            df = df.append(gp_df)
-
-    return df.reset_index(drop = True)
-
-def writeLegalPersonDailyVolumeFile(marketlist, cfgname):
-    fpath = cfg.getConfigValue(cfgname, "dailypath")
-    if os.path.exists(fpath) == False:
-        os.makedirs(fpath)
-
-    day_check = False
-    for mkt in marketlist:
-        # 找出離今天最近日期有值的日期
-        for i in range(0,10):
-            web_ymd = (date.today() - timedelta(days = i)).strftime("%Y%m%d")
-            try:
-                TB_Obj = getTBobj(getBSobj(web_ymd, mkt, cfg), 0, mkt, cfg)
-                break
-            except:
-                continue
-        # 表示這次的loop還沒有檢查日期
-        if day_check == False:
-            # 找出現存的檔案最近的日期[File: DailyVolume_<YYYYMMDD>.csv]
-            file_list = sorted([s for s in os.listdir(fpath) if cfg.getConfigValue(cfgname, "volname") in s], reverse = True)
-            file_last_date = ((file_list[0].split("_"))[1].split("."))[0]
-            if file_last_date == web_ymd:
-                return print(f"最近一個交易的檔案己存在!!({file_list[0]})")
-            # 準備檔案名
-            volfile = f"{fpath}/" + cfg.getConfigValue(cfgname, "volname") + f"_{web_ymd}.csv"
-            day_check = True
-        # 取得表頭(只用上市的表頭就好)
-        if mkt == "TSE":
-            ItemData = []
-            Header = getHeaderLine(TB_Obj)
-        # 取得Item
-        for rows in TB_Obj.select("table > tbody > tr")[0:]:
-            itemlist = []
-            colnum = 0
-            for col in rows.select("td"):
-                colnum += 1
-                if colnum in (1, 2):
-                    val = col.string.strip()
-                else:                
-                    val = int(col.text.replace(",", "").strip())
-                if mkt == "OTC" and colnum in [9, 10, 11, 21, 22]:
-                    continue
-                itemlist.append(val)
-            if  mkt == "OTC":
-                neworder = list(range(0,11)) + [17] + list(range(11,17)) + [18]
-                itemlist = [itemlist[i] for i in neworder]   
-            ItemData.append(itemlist)
-    # 產生DataFrame
-    df_vol = pd.DataFrame(ItemData, columns = Header).sort_values(by =  ["投信買賣超股數"], ascending = False) 
-    file.genFiles(cfgname, df_vol, volfile, "csv")
-    return
-
-def writeRawDataFile(api, StkDF, cfgname):  
-    Stk_list = StkDF["StockID"].to_list()
-    file_exist = ""
-    fpath = cfg.getConfigValue(cfgname, "filepath")
-    # bkpath = cfg.getConfigValue(cfgname, "bkpath")
-    dypath = cfg.getConfigValue(cfgname, "dailypath")
-    hisfile = f"{fpath}/" + cfg.getConfigValue(cfgname, "hisname") + ".csv"
-    first = True
-    # # 建立目錄,不存在才建...(./data)
-    if os.path.exists(fpath) == False:
-        os.makedirs(fpath)
-    if os.path.exists(dypath) == False:
-        os.makedirs(dypath)    
-    #檔案存在就把它抓出來變成dataframe        
-    if os.path.isfile(hisfile) == True:
-        file_exist = "X"
-        df_history = pd.read_csv(hisfile, low_memory = False)
-        df_history["StockID"] = df_history["StockID"].apply(str)
-        # 存一個DF是這次沒有要抓資料的
-        df_notinlist = df_history[~df_history.StockID.isin(Stk_list)]
-        # 這個DF是這次有用到的History Data
-        df_history = df_history[df_history.StockID.isin(Stk_list)] 
-        # 抓出History中的最後一個日期               
-        df_tmp = df_history.sort_values(by = "ts_date", ascending = False)
-        dfbk_date = (datetime.strptime(df_tmp["ts_date"].head(1).values[0], "%Y-%m-%d")).strftime("%Y%m%d")
-    
-    for id in Stk_list:        
-        for i in range(0, 10):
-            # 算出最近有資料的那一天
-            data_date = date.today() - timedelta(days = i)
-            stk_today = pd.DataFrame({**api.kbars(api.Contracts.Stocks[id], start = data_date.strftime("%Y-%m-%d"))})
-            if not stk_today.empty:
-                tmp_df = stk_today
-                stk_today["ts_date"] = pd.to_datetime(stk_today.ts).dt.date
-                stk_today["ts_time"] = pd.to_datetime(stk_today.ts).dt.time
-                stk_today.insert(0, "StockID", str(id))
-                stk_today = stk_today.sort_values(by = "ts")
-                break
-        # 資料日期的最後一天 = 備份資料的最後一天,就離開程式不用更新    
-        if data_date.strftime("%Y%m%d") == dfbk_date:
-            return
-        
-        # 約抓一年份的資料
-        # d_range = [datetime.strptime(f"{date.today().year - 1}-01-01", "%Y-%m-%d"), date.today()]
-        d_range = [data_date - timedelta(days = 400), data_date]
-
-        if file_exist == "X":
-            his_df = df_history.loc[df_history["StockID"] == str(id)].sort_values(by = "ts_date")
-            if not his_df.empty:
-                # 把Range的開始換成資料庫日期的最後一天 + 1
-                d_range[0] = datetime.strptime(his_df["ts_date"].tail(1).values[0], "%Y-%m-%d") + timedelta(days = 1)
-        
-        # 資料庫最後日期 > 最近有資料日期=>表示資料有更新"最近有資料的那一天",就換下一個股票
-        if d_range[0].strftime("%Y-%m-%d") > d_range[1].strftime("%Y-%m-%d"):
-            continue
-            
-        # 資料庫最後日期 < 最近有資料日期 => 把今天抓的放進stk_df,其他的再補抓    
-        if d_range[0].strftime("%Y-%m-%d") < d_range[1].strftime("%Y-%m-%d"):
-            # 不要用d_range[1]..後面可能會有"同一天"的問題產生
-            to_date = data_date - timedelta(days = 1)
-            # 收集其他天的資料(遇到週一,stk_df會是空的) 
-            stk_df = pd.DataFrame({**api.kbars(api.Contracts.Stocks[id], start = d_range[0].strftime("%Y-%m-%d"), end = to_date.strftime("%Y-%m-%d"))})
-            # 把前面己經抓今天的資料放進來
-            # df_tmp = stk_today.drop(columns = ["StockID", "ts_datetime"])
-            if stk_df.empty:
-                stk_df = tmp_df
-            else:    
-                stk_df = stk_df.append(tmp_df)
-
-        # 資料庫最後日期 = 最近有資料日期 => 把抓到的今天資料放進來
-        if d_range[0].strftime("%Y-%m-%d") == d_range[1].strftime("%Y-%m-%d"):
-            stk_df = tmp_df
-        # 轉換日期格式(Grouping使用)
-        stk_df["ts_date"] = pd.to_datetime(stk_df.ts).dt.date
-        stk_df = stk_df.sort_values(by = "ts")
-        stk_df = stk_df.groupby("ts_date", sort=True).agg({"Open": "first", "High": max, "Low": min, "Close": "last", "Volume": sum}).reset_index()
-        stk_df.insert(0, "StockID", str(id))
-        if first == True:
-            df_new = stk_df
-            df_today = stk_today
-            first = False
-        else:
-            df_new = df_new.append(stk_df)
-            df_today = df_today.append(stk_today)
-    # 把今天的部份留一份下來寫DB用        
-    df_todb = df_new.rename(columns = {"ts_date": "TradeDate"})
-
-    # 把歷史資料放進DF中
-    if file_exist == "X":
-        # hisbkfile = f"{bkpath}/" + cfg.getConfigValue(cfgname, "hisname") + f"_to_{dfbk_date}.csv"
-        hisbkfile = f"{dypath}/" + cfg.getConfigValue(cfgname, "hisname") + f"_to_{dfbk_date}.csv"
-        df_history["ts_date"] = pd.to_datetime(df_history["ts_date"], format = "%Y-%m-%d").dt.date
-        # 把沒有在StockList中的再寫回今天的DF
-        if not df_notinlist.empty:
-            df_notinlist["ts_date"] = pd.to_datetime(df_notinlist["ts_date"], format = "%Y-%m-%d").dt.date
-            df_new = df_new.append(df_notinlist)    
-        df_new = df_new.append(df_history)
-        # if os.path.exists(bkpath) == False:
-        #     os.makedirs(bkpath)
-        # 把原本的資料備存(太早備存有Bug就要一直搬回來)
-        try:
-            os.rename(hisfile, hisbkfile)
-        except FileExistsError:
-            os.remove(hisbkfile) 
-            os.rename(hisfile, hisbkfile)
-    
-    # 累積的歷史資料
-    df_new = df_new.sort_values(by = ["StockID", "ts_date"], ascending = True).reset_index(drop = True)
-    file.genFiles(cfgname, df_new, hisfile, "csv")
-
-    fname = f"{dypath}/" + cfg.getConfigValue(cfgname, "kbarname") + f"_{data_date}.csv"
-    df_today = df_today.sort_values(by = ["StockID", "ts_date", "ts_time"]).reset_index(drop = True)
-    file.genFiles(cfgname, df_today, fname, "csv")
-    return
-
-def mergeVolumeDataFile(dframe, cfgname):
-    # 找出這次資料的最後一筆日期
-    df = dframe.sort_values(by = "TradeDate", ascending = False)
-    df_ymd = df["TradeDate"].head(1).values[0].strftime("%Y%m%d")
-    # 取出檔案清單,同時檢查需要的檔案是否存在
-    dlypath = cfg.getConfigValue(cfgname, "dailypath")
-    volfilename = cfg.getConfigValue(cfgname, "volname") + f"_{df_ymd}.csv"
-    volfullpath = dlypath + "/" + volfilename
-    file_list = sorted([s for s in os.listdir(dlypath) if cfg.getConfigValue(cfgname, "volname") in s], reverse = True)
-    try:
-        file_list.index(volfilename)
-    except:
-        return
-        # writeLegalPersonDailyVolumeFile(cfgname)
-    vol_df = pd.read_csv(volfullpath, low_memory = False).filter(items = ["證券代號", "投信買賣超股數"]).rename(columns = {"證券代號": "StockID"})
-    vol_df.insert(0, "ts_date", df["ts_date"].head(1).values[0])
-    return dframe.merge(vol_df, on = ["StockID", "ts_date"], how = "left")
-
-
-
-
-# markets = ["TSE", "OTC"]
-
-# keyindex = ["SMA", "BBands", "SAR_002", "SAR_003", "maxmin_120", "maxmin_240", "RSI", "MACD", "KDJ"]
-# stocks = ["OTC"]
-# cfg_fname = "./config/config.json"
-
-
 api = con().LoginToServerForStock(simulate = False)
 BsData = con(api).getStockDataByCondition()
 
@@ -689,15 +269,12 @@ stkDFwithInd = ind(stkDFwithInd).addRSIvalueToDF(period = 6)
 stkDFwithInd = ind(stkDFwithInd).addRSIvalueToDF(period = 12)
 stkDFwithInd = ind(stkDFwithInd).addMACDvalueToDF() # Default f_period = 12, s_period = 26, sign_period = 9
 stkDFwithInd = ind(stkDFwithInd).addKDJvalueToDF() # Default fk_perd = 9, s_perd = 3
+stkDFwithInd = ind(stkDFwithInd).addMFIvalueToDF()
 
 stkDFwithInd = getLastPeriodDF(stkDFwithInd, 100)   # 後面算指標時會用到52天前的資料
-stkDFwithInd = ind(stkDFwithInd).getSignalByIndicator(inds = ["SMA", "SAR", "MAXMIN", "BBANDS"]) # Default = ["SMA", "SAR", "MAXMIN", "BBands", "RSI", "MACD", "KDJ"]
+stkDFwithInd = ind(stkDFwithInd).getSignalByIndicator(inds = ["SMA", "SAR", "MAXMIN", "BBANDS", "MACD"]) # Default = ["SMA", "SAR", "MAXMIN", "BBands", "RSI", "MACD", "KDJ"]
 writeResultDataToFile(stkDFwithInd)
 writeDailyMinsKbarDataToDB(api)
-
-
-# for k in keyindex:
-#     stkDF = getSignal(stkDF, k)
 
 
 
@@ -750,3 +327,403 @@ writeDailyMinsKbarDataToDB(api)
 #     toDB = df.filter(items = ["StockID", "StockName", "上市/上櫃", "category"]).rename(columns = {"StockName": "Name", "上市/上櫃": "Exchange", "category": "categoryID"})
 #     db.updateDataToDB("stock.basicdata", toDB)
 #     return df.reset_index(drop = True)
+# 
+# 
+# def getStockSMA(dframe, day_list):
+#     first = True
+#     for stockid, gp_df in dframe.groupby("StockID"):
+#         if type(day_list) is int:
+#             gp_df[f"MA_{day_list}"] = talib.SMA(gp_df.Close, timeperiod = day_list)
+#         else:
+#             for madays in day_list:
+#                 gp_df[f"MA_{madays}"] = talib.SMA(gp_df.Close, timeperiod = madays)
+#         if first == True:
+#             df = gp_df
+#             first = False
+#         else:
+#             df = df.append(gp_df)  
+#     return df
+
+# def getStockBBands(dframe, period, stdNbr):
+#     first = True
+#     for stockid, gp_df in dframe.groupby("StockID"):
+#         gp_df["upperband"], gp_df["middleband"], gp_df["lowerband"] = talib.BBANDS( gp_df["Close"], timeperiod = period, nbdevup = stdNbr, nbdevdn = stdNbr, matype = 0)
+
+#         if first == True:
+#             df = gp_df
+#             first = False
+#         else:
+#             df = df.append(gp_df)  
+#     return df
+
+# def getStockSAR(dframe, acc, max):
+#     first = True
+#     title = str(acc).replace(".", "")
+#     for stockid, gp_df in dframe.groupby("StockID"):
+#         gp_df[f"SAR_{title}"] = talib.SAR(gp_df["High"], gp_df["Low"], acceleration = acc, maximum = max)
+
+#         if first == True:
+#             df = gp_df
+#             first = False
+#         else:
+#             df = df.append(gp_df)  
+#     return df
+
+# def getStockMaxMin(dframe, day_list, type_list):
+#     first = True
+#     for stockid, gp_df in dframe.groupby("StockID"):
+#         for fn in type_list:
+#             for days in day_list:
+#                 if fn.lower() == "max":
+#                     gp_df[f"{fn}_{days}"] = gp_df["Close"].rolling(days).max()
+#                 if fn.lower() == "min":
+#                     gp_df[f"{fn}_{days}"] = gp_df["Close"].rolling(days).min()
+#         if first == True:
+#             df = gp_df
+#             first = False
+#         else:
+#             df = df.append(gp_df)
+#     return df
+
+# def getStockMACD(dframe, day_list):
+#     first = True
+#     for stockid, gp_df in dframe.groupby("StockID"):
+#         for d in day_list:
+#             # 调用talib计算指数移动平均线的值
+#             gp_df[f"EMA{d}"] = talib.EMA(gp_df.Close, timeperiod = d)
+
+#         # 调用talib计算MACD指标
+#         gp_df["MACD"], gp_df["MACDsignal"], gp_df["MACDhist"] = talib.MACD(gp_df.Close, fastperiod = day_list[0], slowperiod = day_list[1], signalperiod = day_list[2])
+        
+#         if first == True:
+#             df = gp_df
+#             first = False
+#         else:
+#             df = df.append(gp_df)     
+#     return df
+
+# # RSI計算=>https://www.moneydj.com/kmdj/wiki/wikiviewer.aspx?keyid=f2aa7c2e-f6b5-447f-b5b7-d77572aa4724
+# def getStockRSI(dframe, day_list):
+#     DFrsi = pd.DataFrame()
+#     for stockid, gp_df in dframe.groupby("StockID"):
+#         if type(day_list) is int:
+#             gp_df[f"RSI_{day_list}"] = talib.RSI(gp_df.Close, timeperiod = day_list)
+#         else:
+#             for rsidays in day_list:
+#                 gp_df[f"RSI_{rsidays}"] = talib.RSI(gp_df.Close, timeperiod = rsidays)
+#         DFrsi = DFrsi.append(gp_df)
+#     return DFrsi
+
+# def getSignal(dataframe, tatype):
+#     colnam = f"sgl_{tatype}"
+#     dataframe[colnam] = 0
+#     if tatype.lower() == "sma":
+#         dataframe.loc[(dataframe.Close > dataframe.MA_10) & (dataframe.Close > dataframe.MA_60), colnam] = 1
+#         dataframe.loc[(dataframe.Close < dataframe.MA_10) & (dataframe.Close < dataframe.MA_60), colnam] = -1
+#     if tatype.lower() == "bbands":
+#         dataframe.loc[dataframe.Close > dataframe.upperband, colnam] = -1
+#         dataframe.loc[dataframe.Close < dataframe.lowerband, colnam] = 1
+#     if tatype[0:3].lower() == "sar":
+#         high_9 = dataframe.High.rolling(9).max()
+#         low_9 = dataframe.Low.rolling(9).min()
+#         dataframe["tenkan_sen_line"] = (high_9 + low_9) / 2
+#         high_26 = dataframe.High.rolling(26).max()
+#         low_26 = dataframe.Low.rolling(26).min()
+#         dataframe["kijun_sen_line"] = (high_26 + low_26) / 2
+#         dataframe["senkou_spna_A"] = ((dataframe.tenkan_sen_line + dataframe.kijun_sen_line) / 2).shift(26)
+#         high_52 = dataframe.High.rolling(52).max()
+#         low_52 = dataframe.High.rolling(52).min()
+#         dataframe["senkou_spna_B"] = ((high_52 + low_52) / 2).shift(26)
+#         dataframe["chikou_span"] = dataframe.Close.shift(-26)
+#         if tatype[-3:] == "002":
+#             dataframe.loc[(dataframe.Close > dataframe.senkou_spna_A) & (dataframe.Close > dataframe.senkou_spna_B) & (dataframe.Close > dataframe.SAR_002), colnam] = 1
+#             dataframe.loc[(dataframe.Close < dataframe.senkou_spna_A) & (dataframe.Close < dataframe.senkou_spna_B) & (dataframe.Close < dataframe.SAR_002), colnam] = -1
+#         if tatype[-3:] == "003":
+#             dataframe.loc[(dataframe.Close > dataframe.senkou_spna_A) & (dataframe.Close > dataframe.senkou_spna_B) & (dataframe.Close > dataframe.SAR_003), colnam] = 1
+#             dataframe.loc[(dataframe.Close < dataframe.senkou_spna_A) & (dataframe.Close < dataframe.senkou_spna_B) & (dataframe.Close < dataframe.SAR_003), colnam] = -1
+#         dataframe = dataframe.drop(columns = ["tenkan_sen_line", "kijun_sen_line", "senkou_spna_A", "senkou_spna_B", "chikou_span"])
+#     if tatype[0:6].lower() == "maxmin":
+#         dataframe.loc[(dataframe["Close"] >= dataframe[f"max_{tatype[-3:]}"]), colnam] = 1
+#         dataframe.loc[(dataframe["Close"] <= dataframe[f"min_{tatype[-3:]}"]), colnam] = -1
+#     # 短天期的RSI由下往上突破長天期的RSI線時，表示走勢有轉而增強的跡象，可以考慮買進。反之若短天期的RSI由上往下突破時，則走勢轉弱，考慮賣出    
+#     if tatype.lower() == "rsi":
+#         dataframe.loc[(dataframe.RSI_6 > dataframe.RSI_12), colnam] = 1
+#         dataframe.loc[(dataframe.RSI_6 > dataframe.RSI_12), colnam] = -1
+#     return dataframe
+
+# # def getStockKD(dframe):
+# #     for stockid, gp_df in dframe.groupby("StockID"):
+# #         gp_df["KD"] = abstract.STOCH(gp_df)
+
+
+# # File的部份目前未使用
+# def getStockDailyDataFile(StkDF, cfgname, days):
+#     stk_lst = StkDF["StockID"].astype(str).to_list()
+#     fpath = cfg.getConfigValue(cfgname, "filepath")
+#     fpath = f"{fpath}/" + cfg.getConfigValue(cfgname, "hisname") + ".csv"
+#     # 讀取資料
+#     df_history = pd.read_csv(fpath, low_memory = False)
+#     # StockID由int轉str
+#     df_history["StockID"] = df_history["StockID"].apply(str)
+#     # 只留下這次要的Stock List
+#     df_history = df_history[df_history.StockID.isin(stk_lst)]
+#     # 轉換日期格式
+#     df_history["ts_date"] = pd.to_datetime(df_history["ts_date"], format = "%Y-%m-%d").dt.date
+
+#     # 只留下每個股票後250筆,要用後...後面算數SMA類的資料才會對
+#     first = True
+#     for stockid, gp_df in df_history.groupby("StockID"):
+#         # stk_up_date = StkDF[StkDF["StockID"] == stockid].update_date.values[0]
+#         gp_df = gp_df.sort_values(by = "ts_date", ascending = True)
+#         # 今天沒有交易資料就不要留這支
+#         # if gp_df["ts_date"].tail(1).values[0].strftime("%Y/%m/%d") != stk_up_date:
+#         #     continue
+#         gp_df = gp_df.tail(days)
+#         if first == True:
+#             df = gp_df
+#             first = False
+#         else:
+#             df = df.append(gp_df)
+
+#     return df.reset_index(drop = True)
+
+# def writeLegalPersonDailyVolumeFile(marketlist, cfgname):
+#     fpath = cfg.getConfigValue(cfgname, "dailypath")
+#     if os.path.exists(fpath) == False:
+#         os.makedirs(fpath)
+
+#     day_check = False
+#     for mkt in marketlist:
+#         # 找出離今天最近日期有值的日期
+#         for i in range(0,10):
+#             web_ymd = (date.today() - timedelta(days = i)).strftime("%Y%m%d")
+#             try:
+#                 TB_Obj = getTBobj(getBSobj(web_ymd, mkt, cfg), 0, mkt, cfg)
+#                 break
+#             except:
+#                 continue
+#         # 表示這次的loop還沒有檢查日期
+#         if day_check == False:
+#             # 找出現存的檔案最近的日期[File: DailyVolume_<YYYYMMDD>.csv]
+#             file_list = sorted([s for s in os.listdir(fpath) if cfg.getConfigValue(cfgname, "volname") in s], reverse = True)
+#             file_last_date = ((file_list[0].split("_"))[1].split("."))[0]
+#             if file_last_date == web_ymd:
+#                 return print(f"最近一個交易的檔案己存在!!({file_list[0]})")
+#             # 準備檔案名
+#             volfile = f"{fpath}/" + cfg.getConfigValue(cfgname, "volname") + f"_{web_ymd}.csv"
+#             day_check = True
+#         # 取得表頭(只用上市的表頭就好)
+#         if mkt == "TSE":
+#             ItemData = []
+#             Header = getHeaderLine(TB_Obj)
+#         # 取得Item
+#         for rows in TB_Obj.select("table > tbody > tr")[0:]:
+#             itemlist = []
+#             colnum = 0
+#             for col in rows.select("td"):
+#                 colnum += 1
+#                 if colnum in (1, 2):
+#                     val = col.string.strip()
+#                 else:                
+#                     val = int(col.text.replace(",", "").strip())
+#                 if mkt == "OTC" and colnum in [9, 10, 11, 21, 22]:
+#                     continue
+#                 itemlist.append(val)
+#             if  mkt == "OTC":
+#                 neworder = list(range(0,11)) + [17] + list(range(11,17)) + [18]
+#                 itemlist = [itemlist[i] for i in neworder]   
+#             ItemData.append(itemlist)
+#     # 產生DataFrame
+#     df_vol = pd.DataFrame(ItemData, columns = Header).sort_values(by =  ["投信買賣超股數"], ascending = False) 
+#     file.genFiles(cfgname, df_vol, volfile, "csv")
+#     return
+
+# def writeRawDataFile(api, StkDF, cfgname):  
+#     Stk_list = StkDF["StockID"].to_list()
+#     file_exist = ""
+#     fpath = cfg.getConfigValue(cfgname, "filepath")
+#     # bkpath = cfg.getConfigValue(cfgname, "bkpath")
+#     dypath = cfg.getConfigValue(cfgname, "dailypath")
+#     hisfile = f"{fpath}/" + cfg.getConfigValue(cfgname, "hisname") + ".csv"
+#     first = True
+#     # # 建立目錄,不存在才建...(./data)
+#     if os.path.exists(fpath) == False:
+#         os.makedirs(fpath)
+#     if os.path.exists(dypath) == False:
+#         os.makedirs(dypath)    
+#     #檔案存在就把它抓出來變成dataframe        
+#     if os.path.isfile(hisfile) == True:
+#         file_exist = "X"
+#         df_history = pd.read_csv(hisfile, low_memory = False)
+#         df_history["StockID"] = df_history["StockID"].apply(str)
+#         # 存一個DF是這次沒有要抓資料的
+#         df_notinlist = df_history[~df_history.StockID.isin(Stk_list)]
+#         # 這個DF是這次有用到的History Data
+#         df_history = df_history[df_history.StockID.isin(Stk_list)] 
+#         # 抓出History中的最後一個日期               
+#         df_tmp = df_history.sort_values(by = "ts_date", ascending = False)
+#         dfbk_date = (datetime.strptime(df_tmp["ts_date"].head(1).values[0], "%Y-%m-%d")).strftime("%Y%m%d")
+    
+#     for id in Stk_list:        
+#         for i in range(0, 10):
+#             # 算出最近有資料的那一天
+#             data_date = date.today() - timedelta(days = i)
+#             stk_today = pd.DataFrame({**api.kbars(api.Contracts.Stocks[id], start = data_date.strftime("%Y-%m-%d"))})
+#             if not stk_today.empty:
+#                 tmp_df = stk_today
+#                 stk_today["ts_date"] = pd.to_datetime(stk_today.ts).dt.date
+#                 stk_today["ts_time"] = pd.to_datetime(stk_today.ts).dt.time
+#                 stk_today.insert(0, "StockID", str(id))
+#                 stk_today = stk_today.sort_values(by = "ts")
+#                 break
+#         # 資料日期的最後一天 = 備份資料的最後一天,就離開程式不用更新    
+#         if data_date.strftime("%Y%m%d") == dfbk_date:
+#             return
+        
+#         # 約抓一年份的資料
+#         # d_range = [datetime.strptime(f"{date.today().year - 1}-01-01", "%Y-%m-%d"), date.today()]
+#         d_range = [data_date - timedelta(days = 400), data_date]
+
+#         if file_exist == "X":
+#             his_df = df_history.loc[df_history["StockID"] == str(id)].sort_values(by = "ts_date")
+#             if not his_df.empty:
+#                 # 把Range的開始換成資料庫日期的最後一天 + 1
+#                 d_range[0] = datetime.strptime(his_df["ts_date"].tail(1).values[0], "%Y-%m-%d") + timedelta(days = 1)
+        
+#         # 資料庫最後日期 > 最近有資料日期=>表示資料有更新"最近有資料的那一天",就換下一個股票
+#         if d_range[0].strftime("%Y-%m-%d") > d_range[1].strftime("%Y-%m-%d"):
+#             continue
+            
+#         # 資料庫最後日期 < 最近有資料日期 => 把今天抓的放進stk_df,其他的再補抓    
+#         if d_range[0].strftime("%Y-%m-%d") < d_range[1].strftime("%Y-%m-%d"):
+#             # 不要用d_range[1]..後面可能會有"同一天"的問題產生
+#             to_date = data_date - timedelta(days = 1)
+#             # 收集其他天的資料(遇到週一,stk_df會是空的) 
+#             stk_df = pd.DataFrame({**api.kbars(api.Contracts.Stocks[id], start = d_range[0].strftime("%Y-%m-%d"), end = to_date.strftime("%Y-%m-%d"))})
+#             # 把前面己經抓今天的資料放進來
+#             # df_tmp = stk_today.drop(columns = ["StockID", "ts_datetime"])
+#             if stk_df.empty:
+#                 stk_df = tmp_df
+#             else:    
+#                 stk_df = stk_df.append(tmp_df)
+
+#         # 資料庫最後日期 = 最近有資料日期 => 把抓到的今天資料放進來
+#         if d_range[0].strftime("%Y-%m-%d") == d_range[1].strftime("%Y-%m-%d"):
+#             stk_df = tmp_df
+#         # 轉換日期格式(Grouping使用)
+#         stk_df["ts_date"] = pd.to_datetime(stk_df.ts).dt.date
+#         stk_df = stk_df.sort_values(by = "ts")
+#         stk_df = stk_df.groupby("ts_date", sort=True).agg({"Open": "first", "High": max, "Low": min, "Close": "last", "Volume": sum}).reset_index()
+#         stk_df.insert(0, "StockID", str(id))
+#         if first == True:
+#             df_new = stk_df
+#             df_today = stk_today
+#             first = False
+#         else:
+#             df_new = df_new.append(stk_df)
+#             df_today = df_today.append(stk_today)
+#     # 把今天的部份留一份下來寫DB用        
+#     df_todb = df_new.rename(columns = {"ts_date": "TradeDate"})
+
+#     # 把歷史資料放進DF中
+#     if file_exist == "X":
+#         # hisbkfile = f"{bkpath}/" + cfg.getConfigValue(cfgname, "hisname") + f"_to_{dfbk_date}.csv"
+#         hisbkfile = f"{dypath}/" + cfg.getConfigValue(cfgname, "hisname") + f"_to_{dfbk_date}.csv"
+#         df_history["ts_date"] = pd.to_datetime(df_history["ts_date"], format = "%Y-%m-%d").dt.date
+#         # 把沒有在StockList中的再寫回今天的DF
+#         if not df_notinlist.empty:
+#             df_notinlist["ts_date"] = pd.to_datetime(df_notinlist["ts_date"], format = "%Y-%m-%d").dt.date
+#             df_new = df_new.append(df_notinlist)    
+#         df_new = df_new.append(df_history)
+#         # if os.path.exists(bkpath) == False:
+#         #     os.makedirs(bkpath)
+#         # 把原本的資料備存(太早備存有Bug就要一直搬回來)
+#         try:
+#             os.rename(hisfile, hisbkfile)
+#         except FileExistsError:
+#             os.remove(hisbkfile) 
+#             os.rename(hisfile, hisbkfile)
+    
+#     # 累積的歷史資料
+#     df_new = df_new.sort_values(by = ["StockID", "ts_date"], ascending = True).reset_index(drop = True)
+#     file.genFiles(cfgname, df_new, hisfile, "csv")
+
+#     fname = f"{dypath}/" + cfg.getConfigValue(cfgname, "kbarname") + f"_{data_date}.csv"
+#     df_today = df_today.sort_values(by = ["StockID", "ts_date", "ts_time"]).reset_index(drop = True)
+#     file.genFiles(cfgname, df_today, fname, "csv")
+#     return
+
+# def mergeVolumeDataFile(dframe, cfgname):
+#     # 找出這次資料的最後一筆日期
+#     df = dframe.sort_values(by = "TradeDate", ascending = False)
+#     df_ymd = df["TradeDate"].head(1).values[0].strftime("%Y%m%d")
+#     # 取出檔案清單,同時檢查需要的檔案是否存在
+#     dlypath = cfg.getConfigValue(cfgname, "dailypath")
+#     volfilename = cfg.getConfigValue(cfgname, "volname") + f"_{df_ymd}.csv"
+#     volfullpath = dlypath + "/" + volfilename
+#     file_list = sorted([s for s in os.listdir(dlypath) if cfg.getConfigValue(cfgname, "volname") in s], reverse = True)
+#     try:
+#         file_list.index(volfilename)
+#     except:
+#         return
+#         # writeLegalPersonDailyVolumeFile(cfgname)
+#     vol_df = pd.read_csv(volfullpath, low_memory = False).filter(items = ["證券代號", "投信買賣超股數"]).rename(columns = {"證券代號": "StockID"})
+#     vol_df.insert(0, "ts_date", df["ts_date"].head(1).values[0])
+#     return dframe.merge(vol_df, on = ["StockID", "ts_date"], how = "left")
+# def getBSobj(YYYYMMDD, market, cfgname):
+#     head_info = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"}
+    
+#     # 上市
+#     if market == "TSE":
+#         # 網頁取得自 https://www.twse.com.tw/zh/page/trading/fund/T86.html (列印 / HTML)
+#         # url = f"https://www.twse.com.tw/fund/T86?response=html&date={YYYYMMDD}&selectType=ALL"
+#         url = f"https://www.twse.com.tw/fund/T86?response=html&date={YYYYMMDD}&selectType=ALLBUT0999"
+#     # 上櫃
+#     if market == "OTC":
+#         # 網頁取得自 https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge.php?l=zh-tw (列印/匯出HTML)
+#         ymd = f"{str(int(YYYYMMDD[0:4]) - 1911)}/{YYYYMMDD[4:6]}/{YYYYMMDD[6:8]}"
+#         url = f"https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&o=htm&se=EW&t=D&d={ymd}&s=0,asc"
+#     # 處理網址
+#     urlwithhead = req.get(url, headers = head_info)
+#     urlwithhead.encoding = "utf-8"
+#     # 抓config檔決定是否要產生File
+#     genfile = cfg.getConfigValue(cfgname, "genhtml")
+
+#     # 判斷是否要產生File,不產生就直接把BS Obj傳出去
+#     if genfile != "":
+#         ## 寫網頁原始碼到檔案中cfg是config檔的路徑及檔名
+#         wpath = cfg.getConfigValue(cfgname, "webpath")
+#         # 產生出的檔案存下來
+#         ## 建立目錄,不存在才建...
+#         if os.path.exists(wpath) == False:
+#             os.makedirs(wpath)
+#         rootlxml = bs(urlwithhead.text, "lxml")
+#         with open(f"{wpath}/{market}_三大法人買賣超日報_{YYYYMMDD}.html", mode="w", encoding="UTF-8") as web_html:
+#             web_html.write(rootlxml.prettify())
+
+#     #傳出BeautifulSoup物件     
+#     return bs(urlwithhead.text, "lxml")
+
+# def getTBobj(bsobj, tbID, market, cfgname):
+#     tb = bsobj.find_all("table")[tbID]
+#     # 抓config檔決定是否要產生File
+#     genfile = cfg.getConfigValue(cfgname, "genhtml")
+#     # 判斷是否要產生File,不產生就直接把BS Obj傳出去
+#     if genfile != "":
+#         ## 寫網頁原始碼到檔案中cfg是config檔的路徑及檔名
+#         wpath = cfg.getConfigValue(cfgname, "webpath")
+#         # 產生出的檔案存下來
+#         ## 建立目錄,不存在才建...
+#         if os.path.exists(wpath) == False:
+#             os.makedirs(wpath)
+#         with open(f"{wpath}/{market}_table.html", mode="w", encoding="UTF-8") as web_html:
+#             web_html.write(tb.prettify())
+#     return tb
+
+# def getHeaderLine(tbObj):
+#     headtext = []
+#     for head in tbObj.select("table > thead > tr:nth-child(2) > td"):
+#         headtext.append(head.text)
+#     return headtext
+
+

@@ -99,11 +99,9 @@ def collectBuyOrderDataRule0(stkDF, min5_data):
     
 
 
-# cfg_fname = "./config/config.json"
-ymd = date.today().strftime("%Y%m%d")
+
+
 chk_sec = 30
-# 即將產生的檔名
-newfile = cfg().getValueByConfigFile(key = "filepath") + "/MinsData_" + date.today().strftime("%Y%m%d") + ".xlsx"
 
 # 1.取得連線(可以先不用憑證)
 api = con().LoginToServerForStock(simulate = False)
@@ -114,9 +112,7 @@ api = con().LoginToServerForStock(simulate = False)
 # 3.依策略決定下單清單
 stkDF_new = file().getLastFocusStockDF()
 stkDF = pd.DataFrame()
-stkDF = stg(stkDF_new).SMA_SAR_Volume_MAXMIN()
-if stkDF.empty:
-    stkDF = stg(stkDF_new).SMA_SAR_Volume()
+stkDF = stg(stkDF_new).getFromFocusOnByStrategy()
 
 
 # 4.組合需要抓價量的Stocks
@@ -160,6 +156,7 @@ R1_TradeDF = getTradeResultDF(stkDF, R1_BuyDF, "R1")
 
 
 # 準備存檔資料
+ymd = date.today().strftime("%Y%m%d")
 trade = cfg().getValueByConfigFile(key = "tradepath")
 R0_tdfile = f"{trade}/Trade_{ymd}_R0.xlsx"
 R1_tdfile = f"{trade}/Trade_{ymd}_R1.xlsx"
@@ -167,8 +164,9 @@ R1_tdfile = f"{trade}/Trade_{ymd}_R1.xlsx"
 
 file.GeneratorFromDF(R0_TradeDF, R0_tdfile)
 file.GeneratorFromDF(R1_TradeDF, R1_tdfile)
-# file.genFiles(cfg_fname, R0_TradeDF, R0_tdfile, "xlsx")
-# file.genFiles(cfg_fname, R1_TradeDF, R1_tdfile, "xlsx")
+
+
+
 # %%
 # 每分鐘抓的SnapShot資料存到DB中
 # todayDF = todayDF.sort_values(by = ["StockID", "DateTime", "SnapShotTime"])
@@ -178,10 +176,6 @@ file.GeneratorFromDF(R1_TradeDF, R1_tdfile)
 #     db.updateDataToDB(cfg.getConfigValue(cfg_fname, "tb_snap"), SnapDF)
 # except:
 #     file.genFiles(cfg_fname, todayDF, newfile, "xlsx")
-
-
-
-
 
 
 # SoldOut = ""
