@@ -3,7 +3,7 @@ import pandas as pd
 import random
 from shioaji import constant
 from datetime import datetime, date, time
-from util import con, file, stg, tool, db
+from util import connect as con, file, stg, tool, db
 
 
 odr = []
@@ -18,7 +18,7 @@ def placeOrderCallBack(order_state: constant.OrderState, order: dict):
         itemorder.append(order["order"]["quantity"])
         itemorder.append(order["order"]["order_type"])
         itemorder.append(order["order"]["price_type"])
-        itemorder.append(order["status"]["exchange_ts"])
+        itemorder.append(order["status"]["cancel_quantity"])
         t_date = datetime.fromtimestamp(int(order["status"]["exchange_ts"])).date().strftime("%Y%m%d")
         t_time = datetime.fromtimestamp(int(order["status"]["exchange_ts"])).time().strftime("%H:%M:%S")
         itemorder.append(t_date)
@@ -27,9 +27,9 @@ def placeOrderCallBack(order_state: constant.OrderState, order: dict):
 
     if order_state == constant.OrderState.TFTDeal:
         itemdeal.append(order["code"])
+        itemdeal.append(order["action"]["value"])
         itemdeal.append(order["price"])
-        itemdeal.append(order["quantity"])
-        itemdeal.append(order["ts"])
+        itemdeal.append(order["quantity"])        
         t_date = datetime.fromtimestamp(int(order["status"]["exchange_ts"])).date().strftime("%Y%m%d")
         t_time = datetime.fromtimestamp(int(order["status"]["exchange_ts"])).time().strftime("%H:%M:%S")
         itemdeal.append(t_date)
@@ -78,23 +78,19 @@ for id in BuyList:
 tool.WaitingTimeDecide(check_secs)
 
 # 8.固定時間觀察訂單狀況,決定策略datetime.now()大約會在09:05
-dotimes = tool.calcuateTimesBetweenTwoTime(stime = datetime.now().strftime("%H:%M:%S"), feq = check_secs)
-bf_cls5 = tool.calcuateTimesBetweenTwoTime(stime = datetime.now().strftime("%H:%M:%S"), etime = "13:25:00", feq = check_secs)
+tims_bfcls = tool.calcuateTimesBetweenTwoTime(stime = datetime.now().strftime("%H:%M:%S"), etime = "13:25:00", feq = check_secs)
 
 t = 0
 trade_list = []
 while True:
     t += 1
-    # 收盤就離開了
-    if t == dotimes:
-        break
-    
-    if t == 150:
+   
+    if t == 200:
         con(api).StockCancelOrder()
 
     # 收盤前5mins要清倉
-    if t == bf_cls5:
-        pass    
+    if t == tims_bfcls:
+        break    
 
 
     api.update_status(api.stock_account)
@@ -108,6 +104,7 @@ while True:
         l.append(api.list_trades()[i].status.status.value)
         l.append(api.list_trades()[i].status.order_datetime.strftime("%Y/%m/%d"))
         l.append(api.list_trades()[i].status.order_datetime.strftime("%H:%M:%S"))
+        l.append(datetime.today().strftime("%Y/%m/%d %H:%M:%S"))
         trade_list.append(l)
        
     # 休息時間
@@ -117,12 +114,12 @@ while True:
 
 ymd = datetime.now().strftime("%Y%m%d")
 if trade_list != []:
-    col = ["StockID", "Action", "OrderPrice", "OrderQty", "StatusCode", "Status", "TradeDate", "TradeTime"]
-    tradesDF = pd.DataFrame(trade_list, columns = col)
+    col = ["StockID", "Action", "OrderPrice", "OrderQty", "StatusCode", "Status", "TradeDate", "TradeTime", "DateTime"]
+    tradesDF = pd.DataFrame(trade_list, columns = col).drop_duplicates(subset = ["StockID", "Status"], keep = "first").reset_index(drop = True)
     file.GeneratorFromDF(tradesDF, f"./data/ActuralTrade/tradeupdate_{ymd}.xlsx")
 
 if odr != []:
-    col = ["StockID", "Action", "Price", "Qty", "OrderType", "PriceType", "ts",  "TradeDate", "TradeTime"]
+    col = ["StockID", "Action", "Price", "Qty", "OrderType", "PriceType", "Cancel",  "TradeDate", "TradeTime"]
     orderDF = pd.DataFrame(odr, columns = col)
     file.GeneratorFromDF(orderDF, f"./data/ActuralTrade/order_{ymd}.xlsx")
     # orderDF["TradeDate"] = pd.to_datetime(orderDF.ts).apply(lambda x: x.strftime("%Y%m%d"))
@@ -130,7 +127,7 @@ if odr != []:
     # file.genFiles(cfg_fname, orderDF, f"./data/ActuralTrade/order_{ymd}.xlsx", "xlsx")
 
 if deal != []:
-    col = ["StockID", "Price", "Qty", "ts", "TradeDate", "TradeTime"]
+    col = ["StockID", "Action", "Price", "Qty", "TradeDate", "TradeTime"]
     dealDF = pd.DataFrame(deal, columns = col)
     file.GeneratorFromDF(orderDF, f"./data/ActuralTrade/deal_{ymd}.xlsx")
     # dealDF["TradeDate"] = pd.to_datetime(dealDF.ts).apply(lambda x: x.strftime("%Y%m%d"))

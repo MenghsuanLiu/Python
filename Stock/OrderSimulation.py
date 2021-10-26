@@ -2,7 +2,7 @@
 import pandas as pd
 import time
 from datetime import date, datetime
-from util import con, cfg, file, stg, tool, db
+from util import connect as con, cfg, file, stg, tool, db
 
 
 

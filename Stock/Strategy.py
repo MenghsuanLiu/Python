@@ -2,8 +2,7 @@
 from datetime import datetime, date, time
 
 from numpy import TooHardError
-from util import con, file, stg, tool, db, cfg
-from util import indicator as ind
+from util import file, stg, tool, db, indicator as ind
 
 import matplotlib.pyplot as plt
 
@@ -79,4 +78,8 @@ for id, gpDF in minsDF.groupby("StockID"):
     ax.set_xticklabels(gpDF.index[::5])
     mpf.candlestick2_ochl(ax, gpDF['Open'], gpDF['Close'], gpDF['High'], gpDF['Low'], width=0.6, colorup='r', colordown='g', alpha=0.75)
     
+# %%
+import pandas as pd
+
+df = pd.read_excel(r"D:\GitHub\Python\Stock\data\ActuralTrade\tradeupdate_20211025.xlsx").drop_duplicates(subset = ["StockID", "Status"], keep = "first").reset_index(drop = True)
 # %%

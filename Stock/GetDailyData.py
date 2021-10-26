@@ -1,8 +1,7 @@
 # %%
 import pandas as pd
 from datetime import date, timedelta, datetime
-from util import con, cfg, db, file, tool, craw, stg
-from util import indicator as ind
+from util import connect as con, indicator as ind, cfg, db, file, tool, craw, stg
 
 def writeDailyRawDataDB(api = None, StkDF = None):
     tb = cfg().getValueByConfigFile(key = "tb_daily")
@@ -17,7 +16,7 @@ def writeDailyRawDataDB(api = None, StkDF = None):
             lastday = udate - timedelta(days = 400)
 
         if lastday < udate:
-            DF = con(api).getKarData(stkid = row["StockID"], sdate = (lastday + timedelta(days = 1)).strftime("%Y-%m-%d"), edate = udate.strftime("%Y-%m-%d"))
+            DF = con(api).getKbarData(stkid = row["StockID"], sdate = (lastday + timedelta(days = 1)).strftime("%Y-%m-%d"), edate = udate.strftime("%Y-%m-%d"))
             kBarDF = kBarDF.append(DF)
     # 資料庫有資料 kBarDF就可能是空的       
     if not kBarDF.empty:
@@ -29,21 +28,48 @@ def writeDailyRawDataDB(api = None, StkDF = None):
             db().updateDFtoDB(DkBarDF, tb_name = tb)
 
 def writeDailyMinsKbarDataToDB(api = None):
+    no_update = []
     tb = cfg().getValueByConfigFile(key = "tb_mins")
-    sql = f"SELECT MAX(TradeDate) as TradeDate FROM {tb} group by StockID"
-    lastday = db().selectDatatoDF(sql_statment = sql).iloc[0,0] + timedelta(days = 1)
-    stock_lst = tool.DFcolumnToList(db().selectDatatoDF(cfg().getValueByConfigFile(key = "tb_basic")), colname = "StockID")
-    if lastday > date.today():
-        return print(f"資料庫Table:{tb}的資料己是最新的")
-
-    stkDF = pd.DataFrame()
-    for id in stock_lst:
-        stkDF = con(api).getKarData(stkid = id, sdate = lastday.strftime("%Y-%m-%d"), edate = date.today().strftime("%Y-%m-%d"))
-        stkDF = stkDF.filter(items = ["StockID",  "TradeDate", "TradeTime", "Open", "High", "Low", "Close", "Volume"])
+    sql = f"SELECT StockID, MAX(TradeDate) as TradeDate FROM {tb} group by StockID"
+    stkldayDF = db().selectDatatoDF(sql_statment = sql)
+    bcDF = db().selectDatatoDF(cfg().getValueByConfigFile(key = "tb_basic"))
+    bcDF = bcDF.merge(stkldayDF, on = ["StockID"], how = "left")
+    for index, row in bcDF.iterrows():
+        try:
+            udate = row.TradeDate + timedelta(days = 1)
+        except:
+            udate = date.today() - timedelta(days = 300)
+        if udate > date.today():
+            continue
+        stkDF = con(api).getKbarData(stkid = row.StockID, sdate = udate.strftime("%Y-%m-%d"), edate = date.today().strftime("%Y-%m-%d")).filter(items = ["StockID",  "TradeDate", "TradeTime", "Open", "High", "Low", "Close", "Volume"])
         if stkDF.empty:
-            break
-        print(id)
+            no_update.append(row.StockID)
+            continue
         db().updateDFtoDB(stkDF, tb_name = tb)
+
+    if no_update != []:
+        print(f"沒有更新的Stock如下:{no_update}")
+
+def writeDailyKbarDataToDB(StkDF = pd.DataFrame()):
+    if StkDF.empty:
+        return
+    tb = cfg().getValueByConfigFile(key = "tb_daily")    
+    sql = f"SELECT MAX(TradeDate) as TradeDate FROM {tb}"
+    daily_maxday = db().selectDatatoDF(sql_statment = sql).iloc[0,0]
+
+    tb = cfg().getValueByConfigFile(key = "tb_mins")
+    sql = f"SELECT MAX(TradeDate) as TradeDate FROM {tb}"
+    mins_maxday = db().selectDatatoDF(sql_statment = sql).iloc[0,0]
+    if daily_maxday < mins_maxday:
+        stktuple = tuple(tool.DFcolumnToList(StkDF, colname = "StockID"))
+        tb = cfg().getValueByConfigFile(key = "tb_mins")
+        mins_maxday = mins_maxday.strftime("%Y%m%d")
+        sql = f"SELECT * FROM {tb} WHERE TradeDate = {mins_maxday} AND StockID in {stktuple}"
+        minsDF = db().selectDatatoDF(sql_statment = sql).drop(columns = ["modifytime"])
+        DkBarDF = minsDF.groupby(["StockID", "TradeDate"], sort=True).agg({"Open": "first", "High": max, "Low": min, "Close": "last", "Volume": sum}).reset_index()
+        tb = cfg().getValueByConfigFile(key = "tb_daily")
+        db().updateDFtoDB(DkBarDF, tb_name = tb)
+    
 
 def writeLegalPersonDailyVolumeDB(stkBsData = None):
     # 取得TabName
@@ -218,43 +244,19 @@ def writeResultDataToFile(fullDF = None):
     filename = cfg().getValueByConfigFile(key = "dailypath") + "/Strategy" + f"_{max_ymd}.xlsx"
     stgDF = pd.DataFrame()
     stgDF = stg(outDF).getFromFocusOnByStrategy()
+    stgDF = stgDF[["StockID", "StockName", "cateDesc", "上市/上櫃", "投信(股數)", "外資(股數)", "自營商(股數)", "TradeDate", "Close", "Volume", "MFI", "sgl_SMA", "sgl_SAR", "sgl_MAXMIN", "sgl_BBANDS", "sgl_MACD"]].rename({"cateDesc": "產業別"})
     file.GeneratorFromDF(stgDF, filename)
-
-
-    # # 找出這次資料的最後一筆日期
-    # df = dframe.sort_values(by = "TradeDate", ascending = False)
-    # df_ymd = df["TradeDate"].head(1).values[0].strftime("%Y%m%d")
-    # resultfile = cfg.getConfigValue(cfgname, "dailypath") + "/" + cfg.getConfigValue(cfgname, "resultname") + f"_{df_ymd}.xlsx"
     
-    # # 找到資料然後搬到Backup
-    # # files = os.listdir(cfg.getConfigValue(cfgname, "filepath"))
-    # # matching = [s for s in files if cfg.getConfigValue(cfgname, "resultname") in s]
-    # # for file in matching:
-    # #     fmname = cfg.getConfigValue(cfgname, "filepath") + f"/{file}"
-    # #     toname = cfg.getConfigValue(cfgname, "bkpath") + f"/{file}"
-    # #     os.replace(fmname, toname)
-
-    # first = True
-    # for stockid, gp_df in dframe.groupby("StockID"):
-    #     gp_df = gp_df.sort_values(by = "TradeDate", ascending = False)
-    #     gp_df = gp_df.iloc[[0]].filter(items = (["StockID", "StockName", "上市/上櫃", "投信買賣超股數", "TradeDate", "Close", "Volume", ] + [x for x in gp_df.columns[gp_df.columns.str.contains("sgl")]]))
-
-    #     if first == True:
-    #         df = gp_df
-    #         first = False
-    #     else:
-    #         df = df.append(gp_df)
-    # # 產生結果的Excel
-    # file.genFiles(cfgname, df, resultfile, "xlsx")
-    # return df
-
-
+    stgDF = stgDF[["TradeDate", "StockID", "StockName", "上市/上櫃", "cateDesc", "Close", "Volume", "MFI", "sgl_SMA", "sgl_SAR", "sgl_MAXMIN", "sgl_BBANDS", "sgl_MACD"]].rename({"TradeDate": "Date", "上市/上櫃": "Market", "cateDesc": "Category", "sgl_SMA": "signalSMA", "sgl_SAR": "signalSAR", "sgl_MAXMIN": "signalMAXMIN", "sgl_BBANDS": "signalBBANDS", "sgl_MACD": "signalMACD"})
+    db().updateDFtoDB(stgDF, tb_name = "dailybuystrategy")
 
 
 api = con().LoginToServerForStock(simulate = False)
 BsData = con(api).getStockDataByCondition()
 
-writeDailyRawDataDB(api, BsData)
+writeDailyMinsKbarDataToDB(api)
+writeDailyKbarDataToDB(BsData)
+writeDailyRawDataDB(api, BsData)    # 這支去補足前面漏的
 writeLegalPersonDailyVolumeDB(BsData)
 
 # 取得每天的成交資料(後面數字是往回抓幾天)
@@ -274,7 +276,7 @@ stkDFwithInd = ind(stkDFwithInd).addMFIvalueToDF()
 stkDFwithInd = getLastPeriodDF(stkDFwithInd, 100)   # 後面算指標時會用到52天前的資料
 stkDFwithInd = ind(stkDFwithInd).getSignalByIndicator(inds = ["SMA", "SAR", "MAXMIN", "BBANDS", "MACD"]) # Default = ["SMA", "SAR", "MAXMIN", "BBands", "RSI", "MACD", "KDJ"]
 writeResultDataToFile(stkDFwithInd)
-writeDailyMinsKbarDataToDB(api)
+
 
 
 

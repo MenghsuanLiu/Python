@@ -1,8 +1,7 @@
 # %%
 import pandas as pd
-from datetime import date, datetime
-from util import con, cfg, file, stg, tool, db
-from util import indicator as ind
+from datetime import date, datetime, timedelta
+from util import connect as con, cfg, file, stg, tool, db, indicator as ind
 
 
 def checkPriceToSell(invDF, min_data, last_flg):
@@ -63,43 +62,54 @@ def getTradeResultDF(CarestkDF, BuyDF, Strategy):
 
     return TradeDF
 
-def collectBuyOrderDataRule1(stkDF, min5_data):
-    # 1.排序這5 mins的資料
-    Stk_OHLC = min5_data.sort_values(by = ["StockID", "DateTime"]).reset_index()
-    # 2.取得OHLC的值
-    FocusLst = Stk_OHLC.groupby(by = ["StockID"], sort=True).agg({"Open": "first", "High": max, "Low": min, "Close": "last", "Volume": sum}).rename(columns = {"Open": "5minOpen", "High": "5minHigh", "Low": "5minLow", "Close": "5minClose", "Volume": "5minVolume"})
+def getStockMinsSnapshotFromDB(stkBsData = None, date = datetime.today().strftime("%Y%m%d")):
     
-    # 關注的股票(前一天篩的),只留ID及Close
-    FocusLst = FocusLst.merge(stkDF.filter(items = ["StockID", "StockName", "Close"]).rename(columns = {"Close": "lastClose"}), on = ["StockID"], how = "left")
-
-    FocusLst["Buy"] = 0
-    FocusLst["BuyTime"] = ""
-    # a.5min價 < 前一交易收盤價+5% b.5min價 > 開盤價(紅K) c.5min價>= 最高價*(1 - 0.01)
-    FocusLst.loc[(FocusLst["5minClose"] < FocusLst["lastClose"] * 1.05) & (FocusLst["5minClose"] >= FocusLst["5minOpen"]) & (FocusLst["5minClose"] >= round(FocusLst["5minHigh"] * (1 - 0.01),1)), "Buy"] = FocusLst["5minClose"]
-    FocusLst.loc[FocusLst.Buy != 0, "BuyTime"] = datetime.now().strftime("%H:%M:%S")
-    return FocusLst.reset_index(drop = True)
-
-def collectBuyOrderDataRule0(stkDF, min5_data):
-    # 1.排序這5 mins的資料
-    Stk_OHLC = min5_data.sort_values(by = ["StockID", "DateTime"]).reset_index()
-    # 2.取得OHLC的值
-    Stk_OHLC = Stk_OHLC.groupby(by = ["StockID"], sort=True).agg({"Open": "first", "High": max, "Low": min, "Close": "last", "Volume": sum})
-    # 關注的股票(前一天篩的),只留ID及Close
-    CareStk = stkDF.filter(items = ["StockID", "StockName", "Close"]).rename(columns = {"Close": "lastClose"})    
-    CareStk = CareStk.merge(Stk_OHLC.filter(items = ["StockID", "Close"]).rename(columns = {"Close": "5minClose"}), on = ["StockID"], how = "left")
-    # 5分鐘只要低於前一交易日收盤的+5%以內,都列為買入對象
-    CareStk["Buy"] = 0
-    CareStk["BuyTime"] = ""
-    
-    CareStk.loc[(CareStk["5minClose"] < CareStk["lastClose"] * 1.05), "Buy"] = CareStk["5minClose"]
-    CareStk.loc[(CareStk["5minClose"] < CareStk["lastClose"] * 1.05), "BuyTime"] = datetime.now().strftime("%H:%M:%S")
-
-    return CareStk.reset_index(drop = True)
-    
-
-
+    mintb = cfg().getValueByConfigFile(key = "tb_mins")
+    slst = tuple(tool.DFcolumnToList(inDF = stkBsData, colname = "StockID"))
+    sql = f"SELECT *, TIMESTAMP(TradeDate, TradeTime) as DateTime FROM {mintb} WHERE TradeDate = {date} AND StockID IN {slst}"
+    df = db().selectDatatoDF(sql_statment = sql).sort_values(by = ["StockID", "DateTime"], ascending = True).drop(columns = ["modifytime", "TradeDate", "TradeTime"])
+    return df
 
 chk_sec = 60
+closetime = "13:30:00"
+RSI_period = 12
+
+# 處理模擬的狀況
+if datetime.now().time() > datetime.strptime(closetime, "%H:%M:%S").time() or datetime.today().weekday() in (5, 6):
+    BuyDF = pd.DataFrame()
+    # 依策略決定下單清單
+    stkDF = file().getLastFocusStockDF(-1)
+    stkDF = stg(stkDF).getFromFocusOnByStrategy()
+    # 取snapshot的資料(用File資料中的日期+1)
+    tb = cfg().getValueByConfigFile(key = "tb_mins")
+    maxminsday = db().getMAXvalueFromDBTableColumn(tb_name = tb, col_name = "TradeDate")
+    filemaxday = (stkDF.TradeDate.max() + timedelta(days = 1)).date()
+    if maxminsday < filemaxday:
+        print(f"需要更新{tb}的資料")
+        quit()
+    if maxminsday > filemaxday:    
+        while True:
+            day_snap = getStockMinsSnapshotFromDB(stkDF, (stkDF.TradeDate.max() + timedelta(days = 1)).strftime("%Y%m%d"))
+            if day_snap.empty:
+                filemaxday = filemaxday + timedelta(days = 1)
+                continue
+            break
+    if maxminsday == filemaxday:
+        day_snap = getStockMinsSnapshotFromDB(stkDF, filemaxday.strftime("%Y%m%d"))
+    
+    indDF = ind(day_snap).addRSIvalueToDF(period = RSI_period, cnam_noprd = True)
+    indDF["BuyFlag"] = ""
+    indDF["SellFlag"] = ""
+    indDF.loc[(indDF.RSI <= 30) & (indDF.RSI > 0), "BuyFlag"] = "X"
+    indDF.loc[(indDF.RSI >= 70), "SellFlag"] = "X"
+    # 留下有Flag的部份
+    indDF = indDF[(indDF.BuyFlag != 0) | (indDF.SellFlag != 0)].reset_index(drop = True)
+
+
+
+
+# %%
+
 # 1.取得連線(可以先不用憑證)
 api = con().LoginToServerForStock(simulate = False)
 
@@ -107,9 +117,12 @@ api = con().LoginToServerForStock(simulate = False)
 # api.set_order_callback(placeOrderCallBack)
 
 # 3.依策略決定下單清單
-stkDF_new = file().getLastFocusStockDF()
-stkDF = pd.DataFrame()
-stkDF = stg(stkDF_new).getFromFocusOnByStrategy()
+stkDF = file().getLastFocusStockDF()
+stkDF = stg(stkDF).getFromFocusOnByStrategy()
+
+
+
+
 
 
 # 4.組合需要抓價量的Stocks
@@ -188,5 +201,3 @@ RSI_tdfile = f"{trade}/Trade_{ymd}_RSI.xlsx"
 
 
 file.GeneratorFromDF(RSI_TradeDF, RSI_tdfile)
-
-

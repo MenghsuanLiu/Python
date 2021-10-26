@@ -43,7 +43,7 @@ class cfg:
             val = ""
         return val
 
-class con: 
+class connect: 
     def __init__(self, insrt_api = None) -> None:
         self.acct_mapping = "./config/account.json"
         self.loginfile = cfg().getValueByConfigFile(key = "login")
@@ -210,7 +210,7 @@ class con:
         minDF.StockID = minDF.StockID.astype(str)
         return minDF
 
-    def getKarData(self, stkid:str = None, sdate:str = None, edate:str = None):
+    def getKbarData(self, stkid:str = None, sdate:str = None, edate:str = None):
         if sdate:
             self.startdate = sdate
             self.enddate = sdate
@@ -218,6 +218,7 @@ class con:
         if edate:
             self.enddate = edate
 
+        outDF = pd.DataFrame()
         try:
             outDF = pd.DataFrame({**self.api.kbars(self.api.Contracts.Stocks[stkid], start = self.startdate, end = self.enddate)})
             outDF["TradeDate"] = pd.to_datetime(outDF.ts).dt.strftime("%Y%m%d")
@@ -280,13 +281,6 @@ class con:
         else:
             pass
 
-
-    def SubscribeTick(self, contract):
-        self.api.quote.subscribe(contract, quote_type = sj.constant.QuoteType.Tick)
-
-    def UnsubscribeTick(self, contract):
-        self.api.quote.unsubscribe(contract, quote_type=sj.constant.QuoteType.Tick)
-
     def getStockDataByCondition(self, udb:bool = True, market = None):
         if market:
             self.markets = market
@@ -325,69 +319,13 @@ class con:
 
         return stkDF.reset_index(drop = True)
 
-
-    # & stkDF.update_date == stkDF.update_date.max()
-
-    # def connectToServer(loginfile):
-    #     # 登入帳號
-    #     api = sj.Shioaji(backend = "http", simulation = False) 
-    #     with open(loginfile, "r") as f:
-    #         login_cfg = json.loads(f.read())
-    #     api.login(**login_cfg, contracts_timeout = 0)
-    #     return api
     
-    # def connectToSimServer():
-    #     # 登入帳號
-    #     api = sj.Shioaji(simulation = True) 
-    #     api.login(
-    #         # PAPIUSER01~PAPIUSER08
-    #         person_id = "PAPIUSER06", 
-    #         passwd = "2222", 
-    #         contracts_cb = lambda security_type: print(f"{repr(security_type)} fetch done.")
-    #     )
-    #     return api
+    def SubscribeTick(self, contract):
+        self.api.quote.subscribe(contract, quote_type = sj.constant.QuoteType.Tick)
 
-    # def InsertCAbyConfig(api, cafile):
-    #     with open(cafile, "r") as f:
-    #         ca_cfg = json.loads(f.read())
-    #     remsg = api.activate_ca(**ca_cfg)
-    #     return print(remsg)
-
-    # def InsertCAbyID(api, id):
-    #     remsg = api.activate_ca(
-    #                         ca_path = fr"C:\ekey\551\{id}\S\Sinopac.pfx",
-    #                         ca_passwd = id,
-    #                         person_id = id,
-    #                     )
-    #     return remsg
-
-    # def SetDefaultAccount(api, acctype, name):
-    #     account_cfg = "./config/account.json"
-    #     # acctype => S:股票 F:期貨 H:
-    #     acctid = cfg.getConfigValue(account_cfg, name.lower())
-    #     acct = []
-    #     i = 0
-    #     # 取出這個帳號裡面有多少帳戶可以做交易
-    #     while True:    
-    #         try:
-    #             acct.append([api.list_accounts()[i].account_type.value, api.list_accounts()[i].person_id, api.list_accounts()[i].account_id, api.list_accounts()[i].username])
-    #             i += 1
-    #         except:
-    #             break
-    #     acctDF = pd.DataFrame(acct, columns = ["Type", "ID", "AccountID", "Name"])
-    #     # 取得帳戶的Index,後面可以設交易帳戶
-    #     idx = acctDF.index[(acctDF.Type == acctype) & (acctDF.AccountID == acctid)].values[0]
-    #     # 設定預設交易帳戶
-    #     api.set_default_account(api.list_accounts()[int(idx)])
-    #     # 取得身份證字號,然後把慼證餵進去
-    #     PID = acctDF.ID[(acctDF.Type == acctype) & (acctDF.AccountID == acctid)].values[0]
-    #     msg = con.InsertCAbyID(api, PID)
-    #     # 憑證若失敗會跳error message
-    #     if msg == True:
-    #         return print(f"目前使用憑證:{PID}!!")
-    #     else:
-    #         return
-
+    def UnsubscribeTick(self, contract):
+        self.api.quote.unsubscribe(contract, quote_type=sj.constant.QuoteType.Tick)
+  
 class db:
     def __init__(self):
         self.tb_name = None
@@ -396,6 +334,7 @@ class db:
         self.dbname = "stock"
         self.dbmode = None
         self.statment = None
+        self.col_name = None
 
     def getStockBasicData(self):
         basicDF = self.selectDatatoDF(cfg().getValueByConfigFile(key = "tb_basic")).filter(items = ["StockID", "categoryID"]).rename(columns = {"categoryID": "cateID"})
@@ -416,6 +355,7 @@ class db:
         return pymysql.connect(host = "localhost", user = self.dbusr, passwd = self.dbpwd, database = self.dbname)
 
     def selectDatatoDF(self, tb_name = None, sql_statment:str = None):
+        outDF = pd.DataFrame()
         if tb_name:
             self.tb_name = tb_name  
             self.statment = f"SELECT * FROM {self.tb_name}"
@@ -425,11 +365,10 @@ class db:
 
         try:
             dbcon = self.connLoclmySQL()
-            return pd.read_sql(self.statment, con = dbcon)
+            outDF = pd.read_sql(self.statment, con = dbcon)
         except Exception as exc:
-            return print(exc) 
-       
-
+            print(exc) 
+        return outDF
     def updateDFtoDB(self, insertDF, tb_name = None):
         if not tb_name:
             return print("請輸入需要upDate的Table Name")
@@ -443,6 +382,22 @@ class db:
         except:
             return print(f"Fail to Update Table {self.tb_name}, Check It Please!!!!!")
         
+    def getMAXvalueFromDBTableColumn(self, tb_name:str = None, col_name:str = None):
+        if tb_name:
+            self.tb_name = tb_name
+        if col_name:
+            self.col_name = col_name
+        maxvalue = None
+        try:
+            maxvalue =  self.selectDatatoDF(sql_statment = f"SELECT MAX({self.col_name}) as col FROM {self.tb_name}").iloc[0, 0]
+        except:
+            pass
+        return maxvalue
+
+
+
+
+
 
 
     def mySQLconn(dbname, fn):
@@ -511,22 +466,41 @@ class db:
 
 class file:
     def __init__(self) -> None:
+        self.beforedays = 0
         pass
-
-    def getLastFocusStockDF(self):
+    
+    # days決定往前或往後的天數
+    def getLastFocusStockDF(self, days:int = 0):
+        if days:
+            self.beforedays = days
         filelst = os.listdir(cfg().getValueByConfigFile(key = "dailypath"))
         matching = []
         i = 0
         while True:
             # 算出最近有資料的那一天
-            yyyymmdd = (date.today() - timedelta(days = i)).strftime("%Y%m%d")
-            fname = cfg().getValueByConfigFile(key = "resultname") + f"_{yyyymmdd}.xlsx"
+            ymd = (date.today() - timedelta(days = i)).strftime("%Y%m%d")
+            fname = cfg().getValueByConfigFile(key = "resultname") + f"_{ymd}.xlsx"
             matching = [s for s in filelst if fname in s]
             i += 1
             if matching !=[]:
-                ffpath = cfg().getValueByConfigFile(key = "dailypath") + "/" + cfg().getValueByConfigFile(key = "resultname") + f"_{yyyymmdd}.xlsx"
                 break
-    
+            
+        while True:
+            if self.beforedays != 0:
+                matching = []
+                ymd = (datetime.strptime(ymd, "%Y%m%d") + timedelta(days = self.beforedays)).strftime("%Y%m%d")
+                fname = cfg().getValueByConfigFile(key = "resultname") + f"_{ymd}.xlsx"
+                matching = [s for s in filelst if fname in s]
+            
+            if matching == []:
+                if self.beforedays < 0:
+                    self.beforedays -= 1
+                if self.beforedays > 0:
+                    self.beforedays += 1
+                continue
+            ffpath = cfg().getValueByConfigFile(key = "dailypath") + "/" + cfg().getValueByConfigFile(key = "resultname") + f"_{ymd}.xlsx"
+            break
+
         stkDF = pd.read_excel(ffpath)
         stkDF.StockID = stkDF.StockID.astype(str)
         return stkDF
@@ -658,10 +632,14 @@ class indicator:
         return outDF
 
     # https://rich01.com/rsi-index-review/
-    def addRSIvalueToDF(self, period:int = 0):
+    def addRSIvalueToDF(self, period:int = 0, cnam_noprd:bool = False):
         outDF = pd.DataFrame()
+        if cnam_noprd == True:
+            colname = "RSI"
+        else:
+            colname = f"RSI_{period}"
         for stockid, gpDF in self.DF.groupby("StockID"):
-            gpDF[f"RSI_{period}"] = talib.RSI(gpDF.Close, timeperiod = period)
+            gpDF[colname] = talib.RSI(gpDF.Close, timeperiod = period)
             outDF = outDF.append(gpDF)
         return outDF
 
@@ -794,7 +772,7 @@ class indicator:
 
 class tool:
 
-    def DFcolumnToList(inDF, colname:str):
+    def DFcolumnToList(inDF:pd.DataFrame(), colname:str):
         col_list = []
         col_list = inDF[colname].astype(str).tolist()
         return col_list
