@@ -76,7 +76,7 @@ for id, gpDF in minsDF.groupby("StockID"):
     ax = fig.add_subplot(1, 1, 1)
     ax.set_xticks(range(0, len(gpDF.index), 5))
     ax.set_xticklabels(gpDF.index[::5])
-    mpf.candlestick2_ochl(ax, gpDF['Open'], gpDF['Close'], gpDF['High'], gpDF['Low'], width=0.6, colorup='r', colordown='g', alpha=0.75)
+    # mpf.candlestick2_ochl(ax, gpDF['Open'], gpDF['Close'], gpDF['High'], gpDF['Low'], width=0.6, colorup='r', colordown='g', alpha=0.75)
     
 # %%
 import pandas as pd

@@ -3,7 +3,7 @@ import pandas as pd
 import random
 from shioaji import constant
 from datetime import datetime, date, time
-from util import connect as con, file, stg, tool, db
+from util import connect as con, file, strategy as stg, tool, db
 
 
 odr = []
@@ -78,14 +78,14 @@ for id in BuyList:
 tool.WaitingTimeDecide(check_secs)
 
 # 8.固定時間觀察訂單狀況,決定策略datetime.now()大約會在09:05
-tims_bfcls = tool.calcuateTimesBetweenTwoTime(stime = datetime.now().strftime("%H:%M:%S"), etime = "13:25:00", feq = check_secs)
-
+tims_bfcls = tool.calcuateFrequencyBetweenTwoTime(stime = datetime.now().strftime("%H:%M:%S"), etime = "13:25:00", feq = check_secs)
+canceltime = random.choice(range(180, 250))
 t = 0
 trade_list = []
 while True:
     t += 1
    
-    if t == 200:
+    if t == canceltime:
         con(api).StockCancelOrder()
 
     # 收盤前5mins要清倉

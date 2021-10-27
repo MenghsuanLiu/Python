@@ -1,7 +1,7 @@
 # %%
 import pandas as pd
 from datetime import date, timedelta, datetime
-from util import connect as con, indicator as ind, cfg, db, file, tool, craw, stg
+from util import connect as con, indicator as ind, cfg, db, file, tool, craw, strategy as stg
 
 def writeDailyRawDataDB(api = None, StkDF = None):
     tb = cfg().getValueByConfigFile(key = "tb_daily")
@@ -234,20 +234,20 @@ def getLastPeriodDF(in_DF = None, period:int = 5):
 
 def writeResultDataToFile(fullDF = None):
     max_ymd = fullDF.TradeDate.max().strftime("%Y%m%d")
-    filename = cfg().getValueByConfigFile(key = "dailypath") + "/" + cfg().getValueByConfigFile(key = "resultname") + f"_{max_ymd}.xlsx"
+    fpath = cfg().getValueByConfigFile(key = "dailypath") + f"/{max_ymd[0:6]}"
+    tool.checkPathExist(fpath)
+    fname = f"{fpath}/" + cfg().getValueByConfigFile(key = "resultname") + f"_{max_ymd}.xlsx"
 
-    # max_ymd = fullDF.TradeDate.max()
-    # outDF = fullDF[fullDF.TradeDate == max_ymd].sort_values(by = "TradeDate", ascending = False).filter(items = (["StockID", "StockName", "上市/上櫃", "投信(股數)", "外資(股數)", "自營商(股數)", "TradeDate", "Close", "Volume", ] + [x for x in fullDF.columns[fullDF.columns.str.contains("sgl")]]))
     outDF = getLastPeriodDF(in_DF = fullDF, period = 1).filter(items = (["StockID", "StockName", "上市/上櫃", "投信(股數)", "外資(股數)", "自營商(股數)", "TradeDate", "Close", "Volume", "MFI", ] + [x for x in fullDF.columns[fullDF.columns.str.contains("sgl")]]))
-    file.GeneratorFromDF(outDF, filename)
+    file.GeneratorFromDF(outDF, fname)
     
-    filename = cfg().getValueByConfigFile(key = "dailypath") + "/Strategy" + f"_{max_ymd}.xlsx"
+    fname = f"{fpath}/FocusList_{max_ymd}.xlsx"
     stgDF = pd.DataFrame()
     stgDF = stg(outDF).getFromFocusOnByStrategy()
-    stgDF = stgDF[["StockID", "StockName", "cateDesc", "上市/上櫃", "投信(股數)", "外資(股數)", "自營商(股數)", "TradeDate", "Close", "Volume", "MFI", "sgl_SMA", "sgl_SAR", "sgl_MAXMIN", "sgl_BBANDS", "sgl_MACD"]].rename({"cateDesc": "產業別"})
-    file.GeneratorFromDF(stgDF, filename)
+    stgDF = stgDF[["StockID", "StockName", "cateDesc", "上市/上櫃", "投信(股數)", "外資(股數)", "自營商(股數)", "TradeDate", "Close", "Volume", "MFI", "sgl_SMA", "sgl_SAR", "sgl_MAXMIN", "sgl_BBANDS", "sgl_MACD"]]
+    file.GeneratorFromDF(stgDF, fname)
     
-    stgDF = stgDF[["TradeDate", "StockID", "StockName", "上市/上櫃", "cateDesc", "Close", "Volume", "MFI", "sgl_SMA", "sgl_SAR", "sgl_MAXMIN", "sgl_BBANDS", "sgl_MACD"]].rename({"TradeDate": "Date", "上市/上櫃": "Market", "cateDesc": "Category", "sgl_SMA": "signalSMA", "sgl_SAR": "signalSAR", "sgl_MAXMIN": "signalMAXMIN", "sgl_BBANDS": "signalBBANDS", "sgl_MACD": "signalMACD"})
+    stgDF = stgDF[["TradeDate", "StockID", "StockName", "上市/上櫃", "cateDesc", "Close", "Volume", "MFI", "sgl_SMA", "sgl_SAR", "sgl_MAXMIN", "sgl_BBANDS", "sgl_MACD"]].rename(columns = {"TradeDate": "Date", "上市/上櫃": "Market", "cateDesc": "Category", "sgl_SMA": "signalSMA", "sgl_SAR": "signalSAR", "sgl_MAXMIN": "signalMAXMIN", "sgl_BBANDS": "signalBBANDS", "sgl_MACD": "signalMACD"})
     db().updateDFtoDB(stgDF, tb_name = "dailybuystrategy")
 
 

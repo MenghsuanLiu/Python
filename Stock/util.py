@@ -177,7 +177,7 @@ class connect:
         self.start_time = (datetime.strptime(self.start_time, "%H:%M:%S") + timedelta(minutes = nmin_run)).strftime("%H:%M:%S")
 
         # 這段是防止開盤後run時跑去等開盤時間
-        if datetime.now().strftime("%H:%M:%S") > self.end_time:
+        if simulation().checkSimulationTime():
             outDF = self.getMinSnapshotData(contract)
             return outDF
 
@@ -191,7 +191,7 @@ class connect:
         self.start_time = (datetime.strptime(self.start_time, "%H:%M:%S") + timedelta(minutes = times)).strftime("%H:%M:%S")
         outDF = pd.DataFrame()
         # 收盤後只要取一次就好
-        if datetime.now().time() > datetime.strptime(self.end_time, "%H:%M:%S").time() or datetime.today().weekday() in (5, 6):
+        if simulation().checkSimulationTime():
             outDF = self.getMinSnapshotData(contract)
             return outDF
         
@@ -473,12 +473,13 @@ class file:
     def getLastFocusStockDF(self, days:int = 0):
         if days:
             self.beforedays = days
-        filelst = os.listdir(cfg().getValueByConfigFile(key = "dailypath"))
+
         matching = []
         i = 0
         while True:
             # 算出最近有資料的那一天
             ymd = (date.today() - timedelta(days = i)).strftime("%Y%m%d")
+            filelst = os.listdir(cfg().getValueByConfigFile(key = "dailypath") + f"/{ymd[0:6]}")
             fname = cfg().getValueByConfigFile(key = "resultname") + f"_{ymd}.xlsx"
             matching = [s for s in filelst if fname in s]
             i += 1
@@ -489,6 +490,7 @@ class file:
             if self.beforedays != 0:
                 matching = []
                 ymd = (datetime.strptime(ymd, "%Y%m%d") + timedelta(days = self.beforedays)).strftime("%Y%m%d")
+                filelst = os.listdir(cfg().getValueByConfigFile(key = "dailypath") + f"/{ymd[0:6]}")
                 fname = cfg().getValueByConfigFile(key = "resultname") + f"_{ymd}.xlsx"
                 matching = [s for s in filelst if fname in s]
             
@@ -498,7 +500,7 @@ class file:
                 if self.beforedays > 0:
                     self.beforedays += 1
                 continue
-            ffpath = cfg().getValueByConfigFile(key = "dailypath") + "/" + cfg().getValueByConfigFile(key = "resultname") + f"_{ymd}.xlsx"
+            ffpath = cfg().getValueByConfigFile(key = "dailypath") + f"/{ymd[0:6]}/" + cfg().getValueByConfigFile(key = "resultname") + f"_{ymd}.xlsx"
             break
 
         stkDF = pd.read_excel(ffpath)
@@ -520,7 +522,7 @@ class file:
                 df.to_excel(filename, index = False)
         return
 
-class stg:
+class strategy:
     def __init__(self, DF):
         self.basicDF = db().getStockBasicData()
         self.in_DF = DF
@@ -778,21 +780,29 @@ class tool:
         return col_list
     
     def WaitingTimeDecide(secs:int = 30):
-        closetime = "14:00:00"
+        # closetime = "14:00:00"
         # 這段是防止開盤後run時跑去等開盤時間
-        if datetime.now().time() > datetime.strptime(closetime, "%H:%M:%S").time() or datetime.today().weekday() in (5, 6):
+        # if datetime.now().time() > datetime.strptime(closetime, "%H:%M:%S").time() or datetime.today().weekday() in (5, 6):
+        if simulation().checkSimulationTime():
             wait = 0.1
         else:
             wait = secs - (int(datetime.now().strftime("%S")) % secs)
         time.sleep(wait)
     
-    def calcuateTimesBetweenTwoTime(stime:str = "09:00:00", etime:str = "13:30:00", feq:int = 30):
+    def calcuateFrequencyBetweenTwoTime(stime:str = "09:00:00", etime:str = "13:30:00", feq:int = 30):
         step = 0
         if stime > etime:
             step = 10
         else:
             step = int((datetime.strptime(etime, "%H:%M:%S") - datetime.strptime(stime, "%H:%M:%S")).seconds / feq )        
         return step
+
+    def checkPathExist(c_path:str, build:bool = True)->bool:
+        if build:
+            if not os.path.exists(c_path):    
+                os.makedirs(c_path)
+                return True
+        return os.path.exists(c_path)
 
 class craw:
     def __init__(self):
@@ -900,3 +910,27 @@ class craw:
             itemlist.append(item)
         return itemlist
 
+class simulation:
+    def __init__(self):
+        self.chk_date = datetime.today().date()
+        self.chk_time = datetime.today().time()
+        self.opentime = datetime.strptime("09:00:00", "%H:%M:%S").time()
+        self.closetime = datetime.strptime("13:30:00", "%H:%M:%S").time()
+
+    def checkSimulationTime(self, i_date:str = None, i_time:str = None)->bool:
+        if i_date:
+            self.chk_date = datetime.strptime(i_date.replace("/","").replace("-", ""), "%Y%m%d").date()
+        if i_time:
+
+            self.chk_time = datetime.strptime(i_time.replace(":", ""), "%H%M%S").time()
+
+        if self.chk_time >= self.opentime and self.chk_time <= self.closetime:
+            if self.chk_date.weekday() in range(0, 5):
+                return False
+        return True
+
+    def useRSItoMakeResultDF(self):
+        if not self.checkSimulationTime():
+            return print("Actural")
+        # Sim跑下面這段
+        return print("Sim")

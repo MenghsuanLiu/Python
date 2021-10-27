@@ -2,7 +2,7 @@
 import pandas as pd
 import time
 from datetime import date, datetime
-from util import connect as con, cfg, file, stg, tool, db
+from util import connect as con, cfg, file, strategy as stg, tool, db
 
 
 
@@ -136,7 +136,6 @@ tool.WaitingTimeDecide(chk_sec)
 
 todayDF = minSnapDF
 
-# %%
 for i in range(11, 541):
     minDF = con(api).getMinSnapshotData(contracts)
     # 收集今天的Snapshot
@@ -157,9 +156,10 @@ R1_TradeDF = getTradeResultDF(stkDF, R1_BuyDF, "R1")
 
 # 準備存檔資料
 ymd = date.today().strftime("%Y%m%d")
-trade = cfg().getValueByConfigFile(key = "tradepath")
-R0_tdfile = f"{trade}/Trade_{ymd}_R0.xlsx"
-R1_tdfile = f"{trade}/Trade_{ymd}_R1.xlsx"
+trade_path = cfg().getValueByConfigFile(key = "tradepath") + f"/{ymd[0:6]}"
+tool.checkPathExist(trade_path)
+R0_tdfile = f"{trade_path}/Trade_{ymd}_R0.xlsx"
+R1_tdfile = f"{trade_path}/Trade_{ymd}_R1.xlsx"
 
 
 file.GeneratorFromDF(R0_TradeDF, R0_tdfile)

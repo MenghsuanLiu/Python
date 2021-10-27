@@ -1,7 +1,7 @@
 # %%
 import pandas as pd
 from datetime import date, datetime, timedelta
-from util import connect as con, cfg, file, stg, tool, db, indicator as ind
+from util import connect as con, cfg, file, strategy as stg, tool, db, indicator as ind, simulation as sim
 
 
 def checkPriceToSell(invDF, min_data, last_flg):
@@ -70,6 +70,11 @@ def getStockMinsSnapshotFromDB(stkBsData = None, date = datetime.today().strftim
     df = db().selectDatatoDF(sql_statment = sql).sort_values(by = ["StockID", "DateTime"], ascending = True).drop(columns = ["modifytime", "TradeDate", "TradeTime"])
     return df
 
+
+
+
+
+
 chk_sec = 60
 closetime = "13:30:00"
 RSI_period = 12
@@ -98,15 +103,44 @@ if datetime.now().time() > datetime.strptime(closetime, "%H:%M:%S").time() or da
         day_snap = getStockMinsSnapshotFromDB(stkDF, filemaxday.strftime("%Y%m%d"))
     
     indDF = ind(day_snap).addRSIvalueToDF(period = RSI_period, cnam_noprd = True)
-    indDF["BuyFlag"] = ""
-    indDF["SellFlag"] = ""
-    indDF.loc[(indDF.RSI <= 30) & (indDF.RSI > 0), "BuyFlag"] = "X"
-    indDF.loc[(indDF.RSI >= 70), "SellFlag"] = "X"
+    indDF["Buy"] = 0
+    indDF["Sell"] = 0
+    indDF.loc[(indDF.RSI <= 20) & (indDF.RSI > 0), "Buy"] = indDF.Close
+    indDF.loc[(indDF.RSI >= 80), "Sell"] = indDF.Close
     # 留下有Flag的部份
-    indDF = indDF[(indDF.BuyFlag != 0) | (indDF.SellFlag != 0)].reset_index(drop = True)
-
-
-
+    stkbuysell = []
+    for stockid, gpDF in indDF.groupby("StockID"):
+        buyflag = None
+        sellflag = None
+        l = []
+        for index, row in gpDF.iterrows():
+            if buyflag == None and row.Buy > 0:
+                l.append(row.StockID)
+                l.append(row.DateTime.strftime("%H:%M:%S"))
+                l.append(row.Buy)                
+                buyflag = "X"
+                continue
+            if sellflag == None and l != []:
+                if row.Sell > 0:
+                    l.append(row.DateTime.strftime("%H:%M:%S"))
+                    l.append(row.Sell)                    
+                    sellflag = "X"
+                    stkbuysell.append(l)
+                    continue
+                if row.DateTime.strftime("%H:%M:%S") == "13:25:00":
+                    l.append(row.DateTime.strftime("%H:%M:%S"))
+                    l.append(row.Close)                    
+                    sellflag = "X"
+                    stkbuysell.append(l)
+                    continue
+            if buyflag != None and sellflag != None:
+                break
+    
+    resultDF = pd.DataFrame(stkbuysell, columns = ["StockID", "BuyTime", "Buy", "SellTime", "Sell"])
+    resultDF["Earn"] = resultDF.Sell - resultDF.Buy
+    ymd = datetime.today().strftime("%Y%m%d")
+    file.GeneratorFromDF(resultDF, rf"D:\simRSI_{ymd}.xlsx")
+    quit()
 
 # %%
 
@@ -153,7 +187,7 @@ except:
 tool.WaitingTimeDecide(chk_sec)
 
 # 8.固定時間觀察訂單狀況,決定策略datetime.now()大約會在09:05
-bf_cls5 = tool.calcuateTimesBetweenTwoTime(stime = datetime.now().strftime("%H:%M:%S"), etime = "13:25:00", feq = chk_sec)
+bf_cls5 = tool.calcuateFrequencyBetweenTwoTime(stime = datetime.now().strftime("%H:%M:%S"), etime = "13:25:00", feq = chk_sec)
 
 t = 0
 trade_list = []
