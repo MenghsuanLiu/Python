@@ -335,12 +335,12 @@ class db:
         self.dbmode = None
         self.statment = None
         self.col_name = None
+        self.trade_date = None
 
     def getStockBasicData(self):
         basicDF = self.selectDatatoDF(cfg().getValueByConfigFile(key = "tb_basic")).filter(items = ["StockID", "categoryID"]).rename(columns = {"categoryID": "cateID"})
         cateDF = self.selectDatatoDF(cfg().getValueByConfigFile(key = "tb_ind")).filter(items = ["cateID", "cateDesc"])
         return basicDF.merge(cateDF, on = "cateID", how = "left")
-
 
     def connLoclmySQL(self, db_name = None, con_mode = None):
         # 有指定db就用指定的,其他用預設
@@ -369,6 +369,7 @@ class db:
         except Exception as exc:
             print(exc) 
         return outDF
+    
     def updateDFtoDB(self, insertDF, tb_name = None):
         if not tb_name:
             return print("請輸入需要upDate的Table Name")
@@ -394,11 +395,23 @@ class db:
             pass
         return maxvalue
 
+    def getDailySanpshotFromDBbyDF(self, inDF:pd.DataFrame(), t_date:str = None, tb_type:str = "mins"):        
+        if t_date:
+            self.trade_date = t_date.replace("/", "").replace("-", "")
 
+        tup_stk = tuple(tool.DFcolumnToList(inDF = inDF, colname = "StockID"))
 
+        if tb_type == "mins":    
+            tb = cfg().getValueByConfigFile(key = "tb_mins")
+            sql = f"SELECT *, TIMESTAMP(TradeDate, TradeTime) as DateTime FROM {tb} WHERE TradeDate = {self.trade_date} AND StockID IN {tup_stk}"
+            # 這個出來沒有值就會是 DF.empty
+            return self.selectDatatoDF(sql_statment = sql).sort_values(by = ["StockID", "DateTime"], ascending = True).drop(columns = ["modifytime", "TradeDate", "TradeTime"])
 
-
-
+        if tb_type == "day":
+            tb = cfg().getValueByConfigFile(key = "tb_daily")
+            sql = f"SELECT * FROM {tb} WHERE TradeDate = {self.trade_date} AND StockID IN {tup_stk}"
+            # 這個出來沒有值就會是 DF.empty
+            return self.selectDatatoDF(sql_statment = sql).sort_values(by = ["StockID", "TradeDate"], ascending = True).drop(columns = ["modifytime"])
 
     def mySQLconn(dbname, fn):
         db_usr = "root"
@@ -407,7 +420,6 @@ class db:
             return sqlalchemy.create_engine(f"mysql+pymysql://{db_usr}:{db_pwd}@localhost/{dbname}?charset=utf8")
         else:
             return pymysql.connect(host = "localhost", user = db_usr, passwd = db_pwd, database = dbname)
-
 
     def delDataFromDB(tbfullname, cond_dict):
         cols, vals = list(cond_dict.items())[0]
@@ -634,6 +646,7 @@ class indicator:
         return outDF
 
     # https://rich01.com/rsi-index-review/
+    # cnam_noprd =>指欄位名不要加"_period",只要RSI
     def addRSIvalueToDF(self, period:int = 0, cnam_noprd:bool = False):
         outDF = pd.DataFrame()
         if cnam_noprd == True:
@@ -804,6 +817,9 @@ class tool:
                 return True
         return os.path.exists(c_path)
 
+    def checkFileExist(fname:str)->bool:
+        return os.path.isfile(fname)
+
 class craw:
     def __init__(self):
         self.markets = ["TSE", "OTC"]
@@ -929,8 +945,78 @@ class simulation:
                 return False
         return True
 
-    def useRSItoMakeResultDF(self):
+    def useRSItoMakeResultDF(self, p_days:int = -1, RSI_period:int = 12, buyRSIval:int = 30, sellRSIval:int = 70):
         if not self.checkSimulationTime():
-            return print("Actural")
+            return
         # Sim跑下面這段
-        return print("Sim")
+        FocusDF = file().getLastFocusStockDF(p_days)
+        FocusDF = strategy(FocusDF).getFromFocusOnByStrategy()
+        # 1.取snapshot的資料,取出最新一天的資料(用File資料中的日期+1)
+        # 2.檔案的日期要用第二天的snapshotData
+        tb = cfg().getValueByConfigFile(key = "tb_mins")
+        maxday_db = db().getMAXvalueFromDBTableColumn(tb_name = tb, col_name = "TradeDate")
+        maxday_file = (FocusDF.TradeDate.max() + timedelta(days = 1)).date()
+        # file_day + 1 > db_maxday,表示沒有更新...(這段可以考慮用更新程式)
+        if maxday_db < maxday_file:
+            return print(f"需要更新{tb}的資料")
+        # file_day + 1 < db_maxday,表示抓的可能是多天前的資料,或是遇到休假,就一天一天加,直到抓到資料才離開
+        if maxday_db > maxday_file:    
+            test_date = maxday_file
+            while True:
+                dsnapDF = db().getDailySanpshotFromDBbyDF(FocusDF, t_date = test_date.strftime("%Y%m%d"), tb_type = "mins")
+                # 沒抓到值測試日期就往上加一天
+                if dsnapDF.empty:
+                    test_date += timedelta(days = 1)
+                    continue
+                # 有抓到資料..就離開這個loop
+                break
+        # file_day + 1 = db_maxday,就可以直接抓資料
+        if maxday_db == maxday_file:
+            dsnapDF = db().getDailySanpshotFromDBbyDF(FocusDF, t_date = maxday_file.strftime("%Y%m%d"), tb_type = "mins")
+        
+        wiIndDF = indicator(dsnapDF).addRSIvalueToDF(period = RSI_period, cnam_noprd = True)
+        wiIndDF["Buy"] = 0
+        wiIndDF["Sell"] = 0
+        wiIndDF.loc[(wiIndDF.RSI <= buyRSIval) & (wiIndDF.RSI > 0), "Buy"] = wiIndDF.Close
+        wiIndDF.loc[(wiIndDF.RSI >= sellRSIval), "Sell"] = wiIndDF.Close
+        # 留下第一個Buy及Sell
+        result = []
+        sell_deadline = "13:25:00"
+        for stockid, gpDF in wiIndDF.groupby("StockID"):
+            Buyidx = 0
+            Freq = 0
+            l = []            
+            # 一筆一筆下去找
+            for idx, row in gpDF.iterrows():
+                # 先找Buy
+                if Buyidx == 0 and row.Buy > 0:
+                    Freq += 1
+                    l.append(row.DateTime.strftime("%Y%m%d"))
+                    l.append(row.StockID)
+                    l.append(Freq)                    
+                    l.append(row.DateTime.strftime("%H:%M:%S"))
+                    l.append(row.Buy)                
+                    Buyidx = idx
+                    continue
+                # 再找Sell
+                if Buyidx > 0:
+                    # 1.找到若Sell欄位有值,就留下值,清Buyidx,就可以再找下一個買
+                    if row.Sell > 0:
+                        l.append(row.DateTime.strftime("%H:%M:%S"))
+                        l.append(row.Sell)                    
+                        result.append(l)
+                        Buyidx = 0
+                        l = []
+                        continue
+                    # 2.若到了尾盤..就直接取最後的值
+                    if row.DateTime.strftime("%H:%M:%S") == sell_deadline:
+                        l.append(sell_deadline)
+                        l.append(row.Close)
+                        result.append(l)
+                        break
+        # 取到的List變成DF
+        resultDF = pd.DataFrame()
+        resultDF = pd.DataFrame(result, columns = ["TradeDate", "StockID", "Frequency","BuyTime", "Buy", "SellTime", "Sell"])
+        resultDF["Profit"] = resultDF.Sell - resultDF.Buy
+        return resultDF
+        
