@@ -14,7 +14,7 @@ from datetime import datetime, date, timedelta
 
 
 class cfg:
-    def __init__(self, cfg = None)->None:
+    def __init__(self, cfg: str = None)->None:
         self.cfg_file = "./config/config.json"
         if cfg:
             self.cfg_file = cfg
@@ -32,25 +32,21 @@ class cfg:
         return val
 
 
-
-    def getConfigValue(cfgfile, key):
-        try:
-            with open(cfgfile, encoding="UTF-8") as f:
-                jfile = json.load(f)
-            val = jfile[key]    
-            # val =  ({True: "", False: jfile[datatype]}[jfile[datatype] == "" | jfile[datatype] == "None"])
-        except:
-            val = ""
-        return val
+    # def getConfigValue(cfgfile, key):
+    #     try:
+    #         with open(cfgfile, encoding="UTF-8") as f:
+    #             jfile = json.load(f)
+    #         val = jfile[key]    
+    #         # val =  ({True: "", False: jfile[datatype]}[jfile[datatype] == "" | jfile[datatype] == "None"])
+    #     except:
+    #         val = ""
+    #     return val
 
 class connect: 
-    def __init__(self, insrt_api = None) -> None:
+    def __init__(self, insrt_api = sj.Shioaji) -> None:
         self.acct_mapping = "./config/account.json"
         self.loginfile = cfg().getValueByConfigFile(key = "login")
-        self.api = None
-        if insrt_api:
-            self.api = insrt_api
-
+        self.api = insrt_api
         self.simulation = True  # 是否為測試環境
         self.id = "PAPIUSER0" + str(random.randint(1,8))
         self.pwd = "2222"
@@ -72,7 +68,7 @@ class connect:
         self.trade_qty = 1
         
         
-    def LoginToServerForStock(self, simulate:bool = True, id = None, pwd = None, ca_acct = None):
+    def LoginToServerForStock(self, simulate: bool = True, id = None, pwd = None, ca_acct = None):
         # 模擬!=True self.simulation就要置換,同時ca_acct有值表示要做憑證的active
         # **如果是模擬=>ca_acct不管是否有值都不會active憑證
         if not simulate:
@@ -187,20 +183,6 @@ class connect:
                 break
         return outDF 
 
-    def getMinsSnapshotData(self, contract = None, times: int = 10, usecs:int = 60):
-        self.start_time = (datetime.strptime(self.start_time, "%H:%M:%S") + timedelta(minutes = times)).strftime("%H:%M:%S")
-        outDF = pd.DataFrame()
-        # 收盤後只要取一次就好
-        if simulation().checkSimulationTime():
-            outDF = self.getMinSnapshotData(contract)
-            return outDF
-        
-        while True:
-            outDF = outDF.append(self.getMinSnapshotData(contract))            
-            if datetime.now().strftime("%H:%M:%S") == self.start_time:
-                break
-            tool.WaitingTimeDecide(usecs)
-
     def getMinSnapshotData(self, ctract:list):
         minDF = pd.DataFrame(self.api.snapshots(ctract)).filter(items = ["code", "ts", "open", "high", "low", "close", "volume" ]).rename(columns = {"code": "StockID", "ts": "DateTime", "open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"})
         minDF.DateTime = pd.to_datetime(minDF.DateTime)
@@ -270,16 +252,25 @@ class connect:
     def StockCancelOrder(self, stkid:str = "all"):
         # 先更新一下
         self.api.update_status(self.api.stock_account)
-   
-        if stkid == "all":
-            for i in range(0, len(self.api.list_trades())):
-                if self.api.list_trades()[i].status.status.value != "Cancelled":
+        for i in range(0, len(self.api.list_trades())):
+            if self.api.list_trades()[i].status.status.value != "Cancelled":
+                if stkid != "all" and  self.api.list_trades()[i].contract.code == stkid:
                     self.api.cancel_order(self.api.list_trades()[i])
-                    id = self.api.list_trades()[i].contract.code
-                    ts = self.api.list_trades()[i].status.order_datetime.strftime("%Y/%m/%d %H:%M:%S")
-                    print(f"己取消股票代碼:{id},於{ts}下的單")
-        else:
-            pass
+                    continue
+                # 以下是全刪要走的部份
+                self.api.cancel_order(self.api.list_trades()[i])
+                id = self.api.list_trades()[i].contract.code
+                ts = self.api.list_trades()[i].status.order_datetime.strftime("%Y/%m/%d %H:%M:%S")
+                print(f"己取消股票代碼:{id},於{ts}下的單")
+
+        # if stkid == "all":
+        #     for i in range(0, len(self.api.list_trades())):
+        #         if self.api.list_trades()[i].status.status.value != "Cancelled":
+        #             self.api.cancel_order(self.api.list_trades()[i])
+        #             id = self.api.list_trades()[i].contract.code
+        #             ts = self.api.list_trades()[i].status.order_datetime.strftime("%Y/%m/%d %H:%M:%S")
+        #             print(f"己取消股票代碼:{id},於{ts}下的單")
+ 
 
     def getStockDataByCondition(self, udb:bool = True, market = None):
         if market:
@@ -319,12 +310,28 @@ class connect:
 
         return stkDF.reset_index(drop = True)
 
-    
+    def getOrderStatusDF(self):
+        pass
+
     def SubscribeTick(self, contract):
         self.api.quote.subscribe(contract, quote_type = sj.constant.QuoteType.Tick)
 
     def UnsubscribeTick(self, contract):
         self.api.quote.unsubscribe(contract, quote_type=sj.constant.QuoteType.Tick)
+
+    # def getMinsSnapshotData(self, contract = None, times: int = 10, usecs:int = 60):
+    #     self.start_time = (datetime.strptime(self.start_time, "%H:%M:%S") + timedelta(minutes = times)).strftime("%H:%M:%S")
+    #     outDF = pd.DataFrame()
+    #     # 收盤後只要取一次就好
+    #     if simulation().checkSimulationTime():
+    #         outDF = self.getMinSnapshotData(contract)
+    #         return outDF
+        
+    #     while True:
+    #         outDF = outDF.append(self.getMinSnapshotData(contract))            
+    #         if datetime.now().strftime("%H:%M:%S") == self.start_time:
+    #             break
+    #         tool.WaitingTimeDecide(usecs)
   
 class db:
     def __init__(self):
@@ -342,7 +349,7 @@ class db:
         cateDF = self.selectDatatoDF(cfg().getValueByConfigFile(key = "tb_ind")).filter(items = ["cateID", "cateDesc"])
         return basicDF.merge(cateDF, on = "cateID", how = "left")
 
-    def connLoclmySQL(self, db_name = None, con_mode = None):
+    def connLoclmySQL(self, db_name:str = None, con_mode:str = None):
         # 有指定db就用指定的,其他用預設
         if db_name:
             self.dbname = db_name
@@ -354,7 +361,7 @@ class db:
         
         return pymysql.connect(host = "localhost", user = self.dbusr, passwd = self.dbpwd, database = self.dbname)
 
-    def selectDatatoDF(self, tb_name = None, sql_statment:str = None):
+    def selectDatatoDF(self, tb_name:str = None, sql_statment:str = None):
         outDF = pd.DataFrame()
         if tb_name:
             self.tb_name = tb_name  
@@ -370,7 +377,7 @@ class db:
             print(exc) 
         return outDF
     
-    def updateDFtoDB(self, insertDF, tb_name = None):
+    def updateDFtoDB(self, insertDF: pd.DataFrame, tb_name:str = None):
         if not tb_name:
             return print("請輸入需要upDate的Table Name")
         else:
@@ -395,7 +402,7 @@ class db:
             pass
         return maxvalue
 
-    def getDailySanpshotFromDBbyDF(self, inDF:pd.DataFrame(), t_date:str = None, tb_type:str = "mins"):        
+    def getDailySanpshotFromDBbyDF(self, inDF: pd.DataFrame, t_date:str = None, tb_type:str = "mins"):        
         if t_date:
             self.trade_date = t_date.replace("/", "").replace("-", "")
 
@@ -413,73 +420,73 @@ class db:
             # 這個出來沒有值就會是 DF.empty
             return self.selectDatatoDF(sql_statment = sql).sort_values(by = ["StockID", "TradeDate"], ascending = True).drop(columns = ["modifytime"])
 
-    def mySQLconn(dbname, fn):
-        db_usr = "root"
-        db_pwd = "670325"
-        if fn == "pd_update":
-            return sqlalchemy.create_engine(f"mysql+pymysql://{db_usr}:{db_pwd}@localhost/{dbname}?charset=utf8")
-        else:
-            return pymysql.connect(host = "localhost", user = db_usr, passwd = db_pwd, database = dbname)
+    # def mySQLconn(dbname, fn):
+    #     db_usr = "root"
+    #     db_pwd = "670325"
+    #     if fn == "pd_update":
+    #         return sqlalchemy.create_engine(f"mysql+pymysql://{db_usr}:{db_pwd}@localhost/{dbname}?charset=utf8")
+    #     else:
+    #         return pymysql.connect(host = "localhost", user = db_usr, passwd = db_pwd, database = dbname)
 
-    def delDataFromDB(tbfullname, cond_dict):
-        cols, vals = list(cond_dict.items())[0]
+    # def delDataFromDB(tbfullname, cond_dict):
+    #     cols, vals = list(cond_dict.items())[0]
         
-        db_con = db.mySQLconn(tbfullname.split(".")[0], "delete")
-        cur = db_con.cursor()
-        if isinstance(vals, str):
-            cur.execute(f"DELETE FROM {tbfullname} WHERE {cols} = {vals}")
-        else:
-            cur.execute(f"DELETE FROM {tbfullname} WHERE {cols} IN {vals}")
-        db_con.commit()
-        return print(f"Delete Table {tbfullname} Value Success!")        
+    #     db_con = db.mySQLconn(tbfullname.split(".")[0], "delete")
+    #     cur = db_con.cursor()
+    #     if isinstance(vals, str):
+    #         cur.execute(f"DELETE FROM {tbfullname} WHERE {cols} = {vals}")
+    #     else:
+    #         cur.execute(f"DELETE FROM {tbfullname} WHERE {cols} IN {vals}")
+    #     db_con.commit()
+    #     return print(f"Delete Table {tbfullname} Value Success!")        
 
-    def updateDataToDB(tbfullname, updf):
-        updb_con = db.mySQLconn(tbfullname.split(".")[0], "pd_update")
-        new_df = updf
-        # 不同Table處理方式不太一樣,就只要一直加(不需刪舊的)        
-        if tbfullname.split(".")[1] == "basicdata":
-            df_org = db.readDataFromDBtoDF(tbfullname, "")         
-            if not df_org.empty:
-                new_df = new_df.append(df_org)
-                # 差集(這次DF沒有, DB有要再處理)
-                new_df = new_df.drop_duplicates(subset = ["StockID"], keep = False)
-                # 留下DB有但這次沒有
-                new_df = pd.merge(new_df, updf.filter(items = ["StockID"]), on = ["StockID"]).dropna(axis = "columns")
-        # else:
-            # # 取得要做Delete的ColumnName
-            # colname = ""
-            # if tbfullname.split(".")[1] in ["dailyvolume", "dailyminsholc"]:
-            #     colname = "TradeDate"
-            # if tbfullname.split(".")[1] in ["dailyholc", "testable"]:
-            #     colname = ("StockID", "TradeDate")
-            #     del_df = updf.filter(items = ["StockID", "TradeDate"])
-            #     del_df["TradeDate"] = del_df["TradeDate"].apply(lambda x: x.strftime("%Y%m%d"))
-            #     subsetlst = tuple(zip(del_df.StockID, del_df.TradeDate))
-            # new_df = updf
-        if not new_df.empty:
-            try:
-                new_df.to_sql(con = updb_con, name = tbfullname.split(".")[1], if_exists = "append", index = False)
-                return print(f"Update Table {tbfullname} Success!")
-            except:
-                return print(f"Fail to Update Table {tbfullname} !!!!!")
-        else:
-            return print(f"No New Data need to Update ({tbfullname})!")
+    # def updateDataToDB(tbfullname, updf):
+    #     updb_con = db.mySQLconn(tbfullname.split(".")[0], "pd_update")
+    #     new_df = updf
+    #     # 不同Table處理方式不太一樣,就只要一直加(不需刪舊的)        
+    #     if tbfullname.split(".")[1] == "basicdata":
+    #         df_org = db.readDataFromDBtoDF(tbfullname, "")         
+    #         if not df_org.empty:
+    #             new_df = new_df.append(df_org)
+    #             # 差集(這次DF沒有, DB有要再處理)
+    #             new_df = new_df.drop_duplicates(subset = ["StockID"], keep = False)
+    #             # 留下DB有但這次沒有
+    #             new_df = pd.merge(new_df, updf.filter(items = ["StockID"]), on = ["StockID"]).dropna(axis = "columns")
+    #     # else:
+    #         # # 取得要做Delete的ColumnName
+    #         # colname = ""
+    #         # if tbfullname.split(".")[1] in ["dailyvolume", "dailyminsholc"]:
+    #         #     colname = "TradeDate"
+    #         # if tbfullname.split(".")[1] in ["dailyholc", "testable"]:
+    #         #     colname = ("StockID", "TradeDate")
+    #         #     del_df = updf.filter(items = ["StockID", "TradeDate"])
+    #         #     del_df["TradeDate"] = del_df["TradeDate"].apply(lambda x: x.strftime("%Y%m%d"))
+    #         #     subsetlst = tuple(zip(del_df.StockID, del_df.TradeDate))
+    #         # new_df = updf
+    #     if not new_df.empty:
+    #         try:
+    #             new_df.to_sql(con = updb_con, name = tbfullname.split(".")[1], if_exists = "append", index = False)
+    #             return print(f"Update Table {tbfullname} Success!")
+    #         except:
+    #             return print(f"Fail to Update Table {tbfullname} !!!!!")
+    #     else:
+    #         return print(f"No New Data need to Update ({tbfullname})!")
 
-    def readDataFromDBtoDF(tbfullname, dict_filter):
-        db_con = db.mySQLconn(tbfullname.split(".")[0], "read")
-        if dict_filter == "":
-            return pd.read_sql(f"SELECT * FROM {tbfullname}", con = db_con)
-        else:
-            col, value = list(dict_filter.items())[0]
-            if isinstance(value, str):
-                return pd.read_sql(f"SELECT * FROM {tbfullname} WHERE {col} = {value}", con = db_con)
-            else:
-                return pd.read_sql(f"SELECT * FROM {tbfullname} WHERE {col} IN {value}", con = db_con)
+    # def readDataFromDBtoDF(tbfullname, dict_filter):
+    #     db_con = db.mySQLconn(tbfullname.split(".")[0], "read")
+    #     if dict_filter == "":
+    #         return pd.read_sql(f"SELECT * FROM {tbfullname}", con = db_con)
+    #     else:
+    #         col, value = list(dict_filter.items())[0]
+    #         if isinstance(value, str):
+    #             return pd.read_sql(f"SELECT * FROM {tbfullname} WHERE {col} = {value}", con = db_con)
+    #         else:
+    #             return pd.read_sql(f"SELECT * FROM {tbfullname} WHERE {col} IN {value}", con = db_con)
 
 class file:
+    stkDF = pd.DataFrame()
     def __init__(self) -> None:
         self.beforedays = 0
-        pass
     
     # days決定往前或往後的天數
     def getLastFocusStockDF(self, days:int = 0):
@@ -519,23 +526,23 @@ class file:
         stkDF.StockID = stkDF.StockID.astype(str)
         return stkDF
 
-    def GeneratorFromDF(genDF, fname, ftype:str = "xlsx"):
+    def GeneratorFromDF(self, genDF: pd.DataFrame, fname: str, ftype: str = "xlsx"):
         if ftype.lower() == "csv":
             genDF.to_csv(fname, index = False, encoding = "utf_8_sig")
         if ftype.lower() == "xlsx":
             genDF.to_excel(fname, index = False)
 
-    def genFiles(cfgname, df, filename, ftype):
-        gen = cfg.getConfigValue(cfgname, "genData")
-        if gen.lower() == "x":
-            if ftype.lower() == "csv":
-                df.to_csv(filename, index = False, encoding = "utf_8_sig")
-            if ftype.lower() == "xlsx":
-                df.to_excel(filename, index = False)
-        return
+    # def genFiles(cfgname, df, filename, ftype):
+    #     gen = cfg.getConfigValue(cfgname, "genData")
+    #     if gen.lower() == "x":
+    #         if ftype.lower() == "csv":
+    #             df.to_csv(filename, index = False, encoding = "utf_8_sig")
+    #         if ftype.lower() == "xlsx":
+    #             df.to_excel(filename, index = False)
+    #     return
 
 class strategy:
-    def __init__(self, DF):
+    def __init__(self, DF: pd.DataFrame):
         self.basicDF = db().getStockBasicData()
         self.in_DF = DF
         self.rows = int(round(DF.StockID.count() * 0.1, 0)) # 前10%的交易量
@@ -551,7 +558,7 @@ class strategy:
             self.SMA_SAR_Volume()
         return self.in_DF
 
-    # 邏輯: 前一交易日成交價 > 60MA & 10MA,且成交量 >= 5000張 
+    # 邏輯: 前一交易日成交價 > 60MA & 10MA,且成交量 >= 1/10
     def SMA_SAR_Volume(self):
         out_DF = pd.DataFrame()
         try:
@@ -579,7 +586,7 @@ class strategy:
             self.noexe_method = "X"
         
     # 買進策略:5min的Close < 前一天的Close * 1.05
-    def BuyStrategyFromOpenSnapDF_01(self, snap_DF):
+    def BuyStrategyFromOpenSnapDF_01(self, snap_DF: pd.DataFrame)->pd.DataFrame:
         MergeDF = self.in_DF.filter(items = ["StockID", "StockName", "上市/上櫃", "Close"]).merge(snap_DF.filter(items = ["StockID", "Open", "High", "Close"]).rename(columns = {"Close": "snapClose"}), on = ["StockID"], how = "left")
         MergeDF["BuyFlag"] = ""
         
@@ -587,7 +594,7 @@ class strategy:
         BuyDF = MergeDF.loc[MergeDF.BuyFlag == "X"]
         return BuyDF.drop(columns = ["BuyFlag", "High", "snapClose", "Close"])
     # 買進策略:a.5min價 < 前一交易收盤價+5% b.5min價 >= 開盤價(紅K) c.5min價>= 最高價*(1 - 0.01)
-    def BuyStrategyFromOpenSnapDF_02(self, snap_DF):
+    def BuyStrategyFromOpenSnapDF_02(self, snap_DF: pd.DataFrame)->pd.DataFrame:
         MergeDF = self.in_DF.filter(items = ["StockID", "StockName", "上市/上櫃", "Close"]).merge(snap_DF.filter(items = ["StockID", "Open", "High", "Close"]).rename(columns = {"Close": "snapClose"}), on = ["StockID"], how = "left")
         MergeDF["BuyFlag"] = ""
 
@@ -595,7 +602,7 @@ class strategy:
         BuyDF = MergeDF.loc[MergeDF.BuyFlag == "X"]        
         return BuyDF.drop(columns = ["BuyFlag", "High", "snapClose", "Close"])
 
-    def BuyStrategyFromOpenSnapDF_03(self, snap_DF):
+    def BuyStrategyFromOpenSnapDF_03(self, snap_DF: pd.DataFrame)->pd.DataFrame:
         snap_DF = snap_DF.set_index("DateTime").groupby("StockID").resample("5T", label = "right", closed = "right").agg({"Open": "first", "High": max, "Low": min, "Close": "last", "Volume": sum}).reset_index()
         ymd = datetime.now().strftime("%Y%m%d")
         if snap_DF != []:
@@ -787,7 +794,7 @@ class indicator:
 
 class tool:
 
-    def DFcolumnToList(inDF:pd.DataFrame(), colname:str):
+    def DFcolumnToList(inDF: pd.DataFrame, colname:str):
         col_list = []
         col_list = inDF[colname].astype(str).tolist()
         return col_list
@@ -837,7 +844,7 @@ class craw:
         if market:
             self.m = market
         # 抓config檔決定是否要產生File
-        genfile = cfg().getConfigValue(key = "genhtml")
+        genfile = cfg().getValueByConfigFile(key = "genhtml")
         # 取得網址-上市
         if self.m == "TSE":
             # 網頁取得自 https://www.twse.com.tw/zh/page/trading/fund/T86.html (列印 / HTML)
@@ -855,7 +862,7 @@ class craw:
         # 決定是否把html寫入file
         if genfile != "":
             ## 寫網頁原始碼到檔案中cfg是config檔的路徑及檔名
-            wpath = cfg().getConfigValue(key = "webpath")
+            wpath = cfg().getValueByConfigFile(key = "webpath")
             # 產生出的檔案存下來
             ## 建立目錄,不存在才建...
             if os.path.exists(wpath) == False:
@@ -876,14 +883,14 @@ class craw:
             self.m = market
 
         # 抓config檔決定是否要產生File
-        genfile = cfg().getConfigValue(key = "genhtml")
+        genfile = cfg().getValueByConfigFile(key = "genhtml")
 
         tbobj = self.obj.find_all("table")[self.tableID]
         
         # 決定是否把html寫入file
         if genfile != "":
             ## 寫網頁原始碼到檔案中cfg是config檔的路徑及檔名
-            wpath = cfg().getConfigValue(key = "webpath")
+            wpath = cfg().getValueByConfigFile(key = "webpath")
             # 產生出的檔案存下來
             ## 建立目錄,不存在才建...
             if os.path.exists(wpath) == False:
