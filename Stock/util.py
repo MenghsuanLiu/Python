@@ -487,7 +487,7 @@ class file:
     stkDF = pd.DataFrame()
     def __init__(self) -> None:
         self.beforedays = 0
-    
+
     # days決定往前或往後的天數
     def getLastFocusStockDF(self, days:int = 0):
         if days:
@@ -526,7 +526,7 @@ class file:
         stkDF.StockID = stkDF.StockID.astype(str)
         return stkDF
 
-    def GeneratorFromDF(self, genDF: pd.DataFrame, fname: str, ftype: str = "xlsx"):
+    def GeneratorFromDF(genDF: pd.DataFrame, fname: str, ftype: str = "xlsx"):
         if ftype.lower() == "csv":
             genDF.to_csv(fname, index = False, encoding = "utf_8_sig")
         if ftype.lower() == "xlsx":
@@ -545,46 +545,58 @@ class strategy:
     def __init__(self, DF: pd.DataFrame):
         self.basicDF = db().getStockBasicData()
         self.in_DF = DF
+        self.in_DFchangename = DF.rename(columns = {"投信(股數)": "Credit"})
+        self.out_DF = pd.DataFrame()
         self.rows = int(round(DF.StockID.count() * 0.1, 0)) # 前10%的交易量
-        self.noexe_method = None
+        self.method = 0
 
     def SMA_Volume(self):
         out_DF =  self.in_DF.loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.Volume >= 5000)]
         return out_DF.merge(self.basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
 
-    def getFromFocusOnByStrategy(self):
+    def getFromFocusOnByStrategy(self, no_credit:bool = False):
         self.SMA_SAR_Volume_MAXMIN()
-        if self.noexe_method == None:
-            self.SMA_SAR_Volume()
-        return self.in_DF
 
-    # 邏輯: 前一交易日成交價 > 60MA & 10MA,且成交量 >= 1/10
+        if self.out_DF.empty:
+            self.SMA_SAR_Volume()
+
+        if self.out_DF.shape[0] > 20 and no_credit == False:
+            self.SMA_SAR_Volume_CreditBuy()
+
+        return self.out_DF
+
+    # 邏輯: 前一交易日成交價 > 60MA & 10MA,且成交量 >= 1/10, 股價不要超過150
     def SMA_SAR_Volume(self):
-        out_DF = pd.DataFrame()
         try:
             # out_DF =  self.in_DF.loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.Volume >= 5000) & (self.in_DF.sgl_SAR > 0)]
-            out_DF = self.in_DF.nlargest(self.rows, "Volume").loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.sgl_SAR > 0)]
-            out_DF = out_DF.merge(self.basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
+            # self.out_DF = self.in_DF.nlargest(self.rows, "Volume").loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.sgl_SAR > 0)]
+            self.out_DF = self.in_DF.nlargest(self.rows, "Volume").loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.sgl_SAR > 0) & (self.in_DF.Close <= 150)]
+            self.out_DF = self.out_DF.merge(self.basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
+            self.method = 2
         except:
             pass
 
-        if not out_DF.empty:
-            self.in_DF = out_DF
-            self.noexe_method = "X"
 
     def SMA_SAR_Volume_MAXMIN(self):
-        out_DF = pd.DataFrame()
         try:
             # out_DF = self.in_DF.loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.Volume >= 5000) & (self.in_DF.sgl_SAR > 0) & (self.in_DF.sgl_MAXMIN > 0)]
-            out_DF = self.in_DF.nlargest(self.rows, "Volume").loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.sgl_SAR > 0) & (self.in_DF.sgl_MAXMIN > 0)]
-            out_DF = out_DF.merge(self.basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
+            # self.out_DF = self.in_DF.nlargest(self.rows, "Volume").loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.sgl_SAR > 0) & (self.in_DF.sgl_MAXMIN > 0)]
+            self.out_DF = self.in_DF.nlargest(self.rows, "Volume").loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.sgl_SAR > 0) & (self.in_DF.sgl_MAXMIN > 0) & (self.in_DF.Close <= 150)]
+            self.out_DF = self.out_DF.merge(self.basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
+            self.method = 1
         except:
             pass
 
-        if not out_DF.empty:
-            self.in_DF = out_DF
-            self.noexe_method = "X"
-        
+    # 多加一個投信買超
+    def SMA_SAR_Volume_CreditBuy(self):
+        self.out_DF = pd.DataFrame()
+        if self.method == 1:
+            self.out_DF = self.in_DFchangename.nlargest(self.rows, "Volume").loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.sgl_SAR > 0) & (self.in_DF.sgl_MAXMIN > 0) & (self.in_DF.Credit > 0) & (self.in_DF.Close <= 150)]
+        if self.method == 2:
+            self.out_DF = self.in_DFchangename.nlargest(self.rows, "Volume").loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.sgl_SAR > 0) & (self.in_DF.Credit > 0)].rename(columns = {"Credit": "投信(股數)"})
+        self.out_DF = self.out_DF.merge(self.basicDF, on = ["StockID"], how = "left").drop(columns = ["cateID"])
+
+
     # 買進策略:5min的Close < 前一天的Close * 1.05
     def BuyStrategyFromOpenSnapDF_01(self, snap_DF: pd.DataFrame)->pd.DataFrame:
         MergeDF = self.in_DF.filter(items = ["StockID", "StockName", "上市/上櫃", "Close"]).merge(snap_DF.filter(items = ["StockID", "Open", "High", "Close"]).rename(columns = {"Close": "snapClose"}), on = ["StockID"], how = "left")
@@ -944,7 +956,6 @@ class simulation:
         if i_date:
             self.chk_date = datetime.strptime(i_date.replace("/","").replace("-", ""), "%Y%m%d").date()
         if i_time:
-
             self.chk_time = datetime.strptime(i_time.replace(":", ""), "%H%M%S").time()
 
         if self.chk_time >= self.opentime and self.chk_time <= self.closetime:
@@ -954,10 +965,10 @@ class simulation:
 
     def useRSItoMakeResultDF(self, p_days:int = -1, RSI_period:int = 12, buyRSIval:int = 30, sellRSIval:int = 70):
         if not self.checkSimulationTime():
-            return
+            return pd.DataFrame()
         # Sim跑下面這段
         FocusDF = file().getLastFocusStockDF(p_days)
-        FocusDF = strategy(FocusDF).getFromFocusOnByStrategy()
+        FocusDF = strategy(FocusDF).getFromFocusOnByStrategy(no_credit = True)
         # 1.取snapshot的資料,取出最新一天的資料(用File資料中的日期+1)
         # 2.檔案的日期要用第二天的snapshotData
         tb = cfg().getValueByConfigFile(key = "tb_mins")

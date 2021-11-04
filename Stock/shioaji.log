@@ -2,3 +2,17 @@
 [E 2021-10-07 21:00:13,787 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
 [E 2021-10-21 09:00:02,861 D:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {}
 [E 2021-10-30 17:19:52,797 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'detail': '已取消的預約單', 'sts_code': 75006}}
+[E 2021-11-01 20:42:03,522 d:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] Topic: api/v1/order/place_order, Status Code is None.
+[E 2021-11-01 20:42:08,540 d:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] Topic: api/v1/order/place_order, Status Code is None.
+[E 2021-11-01 20:42:13,560 d:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] Topic: api/v1/order/place_order, Status Code is None.
+[E 2021-11-01 20:42:18,592 d:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] Topic: api/v1/order/place_order, Status Code is None.
+[E 2021-11-01 20:42:23,605 d:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] Topic: api/v1/order/place_order, Status Code is None.
+[E 2021-11-01 20:42:28,614 d:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] Topic: api/v1/order/place_order, Status Code is None.
+[E 2021-11-01 20:42:33,627 d:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] Topic: api/v1/order/place_order, Status Code is None.
+[E 2021-11-02 09:05:05,182 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] Topic: api/v1/order/place_order, Status Code is None.
+[E 2021-11-02 09:05:10,196 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] Topic: api/v1/order/place_order, Status Code is None.
+[E 2021-11-02 09:05:15,202 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] Topic: api/v1/order/place_order, Status Code is None.
+[E 2021-11-02 09:05:20,203 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] Topic: api/v1/order/place_order, Status Code is None.
+[E 2021-11-02 09:05:25,217 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] Topic: api/v1/order/place_order, Status Code is None.
+[E 2021-11-02 09:05:30,230 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] Topic: api/v1/order/place_order, Status Code is None.
+[E 2021-11-02 09:06:05,241 D:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {}

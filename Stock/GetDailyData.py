@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import date, timedelta, datetime
 from util import connect as con, indicator as ind, cfg, db, file, tool, craw, strategy as stg
 
-def writeDailyRawDataDB(api = None, StkDF = None):
+def writeDailyRawDataDB(api = None, StkDF: pd.DataFrame = None):
     tb = cfg().getValueByConfigFile(key = "tb_daily")
     sql = f"SELECT StockID, MAX(TradeDate) as TradeDate FROM {tb} group by StockID"
     lastday_stocks = db().selectDatatoDF(sql_statment = sql)
@@ -50,7 +50,7 @@ def writeDailyMinsKbarDataToDB(api = None):
     if no_update != []:
         print(f"沒有更新的Stock如下:{no_update}")
 
-def writeDailyKbarDataToDB(StkDF = pd.DataFrame()):
+def writeDailyKbarDataToDB(StkDF: pd.DataFrame):
     if StkDF.empty:
         return
     tb = cfg().getValueByConfigFile(key = "tb_daily")    
@@ -70,8 +70,7 @@ def writeDailyKbarDataToDB(StkDF = pd.DataFrame()):
         tb = cfg().getValueByConfigFile(key = "tb_daily")
         db().updateDFtoDB(DkBarDF, tb_name = tb)
     
-
-def writeLegalPersonDailyVolumeDB(stkBsData = None):
+def writeLegalPersonDailyVolumeDB(stkBsData: pd.DataFrame = None):
     # 取得TabName
     tb = cfg().getValueByConfigFile(key = "tb_volume")
     sql = f"SELECT MAX(TradeDate) as TradeDate FROM {tb}"
@@ -186,7 +185,7 @@ def writeLegalPersonDailyVolumeDB(stkBsData = None):
     # db.updateDataToDB(tb, df_vol)
 
 # 把基本資料及量都併進來
-def getStockDailyDataFromDB(stkBsData = None, days:int = 250):
+def getStockDailyDataFromDB(stkBsData: pd.DataFrame, days:int = 250)->pd.DataFrame:
     dytb = cfg().getValueByConfigFile(key = "tb_daily")
     slst = tuple(tool.DFcolumnToList(inDF = stkBsData, colname = "StockID"))
     sql = f"SELECT DISTINCT TradeDate FROM {dytb}"
@@ -199,7 +198,7 @@ def getStockDailyDataFromDB(stkBsData = None, days:int = 250):
     df = df.merge(stkBsData, on = ["StockID"], how = "left")
     return df
 
-def mergeVolumeDataDB(in_DF = None):
+def mergeVolumeDataDB(in_DF: pd.DataFrame = None)->pd.DataFrame:
     # 找出這次資料的最後一筆日期
     tb = cfg().getValueByConfigFile(key = "tb_volume")
     max_ymd = in_DF.TradeDate.max().strftime("%Y%m%d")
@@ -228,11 +227,12 @@ def mergeVolumeDataDB(in_DF = None):
     # else:
     #     print(f"沒有取到{tb_vol}的資料!!")
 
-def getLastPeriodDF(in_DF = None, period:int = 5):
+def getLastPeriodDF(in_DF: pd.DataFrame = None, period:int = 5)->pd.DataFrame:
+    outDF = pd.DataFrame()
     outDF = in_DF.groupby("StockID").tail(period)
     return outDF
 
-def writeResultDataToFile(fullDF = None):
+def writeResultDataToFile(fullDF: pd.DataFrame):
     max_ymd = fullDF.TradeDate.max().strftime("%Y%m%d")
     fpath = cfg().getValueByConfigFile(key = "dailypath") + f"/{max_ymd[0:6]}"
     tool.checkPathExist(fpath)
@@ -243,10 +243,12 @@ def writeResultDataToFile(fullDF = None):
     
     fname = f"{fpath}/FocusList_{max_ymd}.xlsx"
     stgDF = pd.DataFrame()
-    stgDF = stg(outDF).getFromFocusOnByStrategy()
+    stgDF = stg(outDF).getFromFocusOnByStrategy(no_credit = True)
     stgDF = stgDF[["StockID", "StockName", "cateDesc", "上市/上櫃", "投信(股數)", "外資(股數)", "自營商(股數)", "TradeDate", "Close", "Volume", "MFI", "sgl_SMA", "sgl_SAR", "sgl_MAXMIN", "sgl_BBANDS", "sgl_MACD"]]
     file.GeneratorFromDF(stgDF, fname)
-    
+    fname = cfg().getValueByConfigFile(key = "dailypath") + "/8002.xlsx"
+    file.GeneratorFromDF(stgDF, fname)
+
     stgDF = stgDF[["TradeDate", "StockID", "StockName", "上市/上櫃", "cateDesc", "Close", "Volume", "MFI", "sgl_SMA", "sgl_SAR", "sgl_MAXMIN", "sgl_BBANDS", "sgl_MACD"]].rename(columns = {"TradeDate": "Date", "上市/上櫃": "Market", "cateDesc": "Category", "sgl_SMA": "signalSMA", "sgl_SAR": "signalSAR", "sgl_MAXMIN": "signalMAXMIN", "sgl_BBANDS": "signalBBANDS", "sgl_MACD": "signalMACD"})
     db().updateDFtoDB(stgDF, tb_name = "dailybuystrategy")
 

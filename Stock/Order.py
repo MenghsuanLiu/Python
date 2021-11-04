@@ -1,4 +1,5 @@
 # %%
+# 2021/11/05 測Order的資料接收
 import pandas as pd
 import random
 import sys
@@ -92,40 +93,46 @@ stgBuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_01(minSnapDF)
 # stgBuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_03(minSnapDF)
 BuyList = tool.DFcolumnToList(stgBuyDF, "StockID")
 
-# 7.下單(超過10個就random抓10支)
+# 7.下單--超過30就停止
+# if len(BuyList) > 30:
+#     sys.exit()
 # random.sample不會抓重覆 random.choices會抓重覆
 # BuyList = random.choices(BuyList, k = random.choice(range(1,len(BuyList))))
-if len(BuyList) > 10:
-    BuyList = random.sample(BuyList, k = 10)
+# if len(BuyList) > 10:
+#     BuyList = random.sample(BuyList, k = 1)
 
 for id in BuyList:
-    con(api).StockNormalBuySell(stkid = id, price = "up", qty = 1, action = "Buy")
+    con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Buy")
 
 tool.WaitingTimeDecide(check_secs)
 # 8.檢查一下成交的狀況(沒有成交資訊...就先全部Cancel,離開程式)有成交就算出成交後賣的上下限價
-BuyDF = getNewBuyDFforGetDealOrder(api, BuyList)
+# BuyDF = getNewBuyDFforGetDealOrder(api, BuyList)
 
 while True:
     # 取得現行報價
     SnapShot = con(api).getMinSnapshotData(contracts)
 
-    # 檢查回傳的資訊是否己經有賣出的(有賣出就不會再出現在BuyDF)
-    BuyDF = checkSoldStatusForBuyDF(BuyDF, dealDF)
-    # 若是空值,表示賣完了,就可以離開了
-    if BuyDF.empty:
-        break
+    if datetime.now().strftime("%H:%M") == "09:25":
+        con(api).StockCancelOrder()
+        continue
 
-    # 盤中遇到價格>=買價的1% or 價格<=買價的2%(就做賣單: Sell + 跌停價)
-    for idx, row in BuyDF.iterrows():
-        nowprice = SnapShot[SnapShot.StockID == row.StockID].Close.values[0]
-        if nowprice >= row.UP or nowprice <= row.DOWN:
-            con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Sell")
-            continue
+    # # 檢查回傳的資訊是否己經有賣出的(有賣出就不會再出現在BuyDF)
+    # BuyDF = checkSoldStatusForBuyDF(BuyDF, dealDF)
+    # # 若是空值,表示賣完了,就可以離開了
+    # if BuyDF.empty:
+    #     break
 
-    # 收盤前5mins要清倉(Sell + 跌停價)
+    # # 盤中遇到價格>=買價的1% or 價格<=買價的2%(就做賣單: Sell + 跌停價)
+    # for idx, row in BuyDF.iterrows():
+    #     nowprice = SnapShot[SnapShot.StockID == row.StockID].Close.values[0]
+    #     if nowprice >= row.UP or nowprice <= row.DOWN:
+    #         con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Sell")
+    #         continue
+
+    # # 收盤前5mins要清倉(Sell + 跌停價)
     if datetime.now().strftime("%H:%M") == "13:25":
-        for id in tool.DFcolumnToList(BuyDF, "StockID"):
-            con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Sell")
+    #     for id in tool.DFcolumnToList(BuyDF, "StockID"):
+    #         con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Sell")
         break  
     
     tool.WaitingTimeDecide(check_secs)
@@ -219,3 +226,5 @@ if not dealDF.empty:
 
 # # 庫存資料轉DF
 # pd.DataFrame(api.list_positions(api.stock_account))
+
+# %%

@@ -1,12 +1,10 @@
 # %%
 import pandas as pd
 from datetime import datetime
-from util import connect as con, file, strategy as stg, tool, db, indicator as ind, simulation as sim
-
+from util import connect as con, file, strategy as stg, tool, indicator as ind, simulation as sim
+import sys
 
 chk_sec = 60
-stkDF = file().getLastFocusStockDF()
-stkDF = stg(stkDF).getFromFocusOnByStrategy()
 
 
 # 做盤後模擬測試
@@ -18,7 +16,7 @@ if not RSIsmiDF.empty:
         RSIsmiDF = RSIsmiDF.append(pd.read_excel(fpath))
         RSIsmiDF = RSIsmiDF.drop_duplicates(subset = ["TradeDate", "StockID", "Frequency"], keep = "first")
     file.GeneratorFromDF(RSIsmiDF, fpath)
-    quit()
+    sys.exit()
 
 # 1.取得連線(可以先不用憑證)
 api = con().LoginToServerForStock(simulate = False)
@@ -28,7 +26,7 @@ api = con().LoginToServerForStock(simulate = False)
 
 # 3.依策略決定下單清單
 stkDF = file().getLastFocusStockDF()
-stkDF = stg(stkDF).getFromFocusOnByStrategy()
+stkDF = stg(stkDF).getFromFocusOnByStrategy(no_credit = True)
 
 # 4.組合需要抓價量的Stocks
 contracts = con(api).getContractForAPI(stkDF)
@@ -37,9 +35,10 @@ contracts = con(api).getContractForAPI(stkDF)
 minsSnapDF = pd.DataFrame()
 rcdDF = pd.DataFrame()
 resultDF = pd.DataFrame()
+
 while True:
     # 每分做一次snapshot的累積[col = "StockID", "DateTime", "Open", "High", "Low", "Close", "Volume", "TradeDate", "TradeTime", "SnapShotTime"]
-    minsSnapDF = minsSnapDF.append(con(api).getMinSnapshotData(contracts)).sort_values(by = ["StockID", "DateTime"]).reset_index(drop = True)
+    minsSnapDF = minsSnapDF.append(con(api).getMinSnapshotData(contracts))#.sort_values(by = ["StockID", "DateTime"]).reset_index(drop = True)
 
     # 時間到收盤就離開
     if datetime.now().strftime("%H:%M") == "13:30":
@@ -49,6 +48,7 @@ while True:
         continue
     
     # 開始計算RSI
+    minsSnapDF = minsSnapDF.sort_values(by = ["StockID", "DateTime"]).reset_index(drop = True)
     wiIndDF = ind(minsSnapDF).addRSIvalueToDF(period = 12, cnam_noprd = True)
     wiIndDF["Buy"] = 0
     wiIndDF["Sell"] = 0
@@ -121,3 +121,5 @@ if not resultDF.empty:
         resultDF = resultDF.append(pd.read_excel(fpath))
         resultDF = resultDF.drop_duplicates(subset = ["TradeDate", "StockID", "Frequency"], keep = "first")
     file.GeneratorFromDF(resultDF, fpath)
+
+# %%
