@@ -7,36 +7,39 @@ from shioaji import constant
 from datetime import datetime
 from util import connect as con, file, strategy as stg, tool
 
-orderDF = pd.DataFrame()
-dealDF = pd.DataFrame()
+# %%
+
+itemorder = []
+itemdeal = []
 
 def placeOrderCallBack(order_state: constant.OrderState, order: dict):
-    # 用global才可以告訴function要修改的是全域變數
-    global orderDF, dealDF
-    itemorder = []
-    itemdeal = []
+    # # 用global才可以告訴function要修改的是全域變數
+    # global orderDF, dealDF
+
     if order_state == constant.OrderState.TFTOrder: 
-        col = ["StockID", "Action", "Price", "Qty", "OrderType", "PriceType", "Cancel",  "TradeDate", "TradeTime"]
-        itemorder.append(order["contract"]["code"])
-        itemorder.append(order["order"]["action"])
-        itemorder.append(order["order"]["price"])
-        itemorder.append(order["order"]["quantity"])
-        itemorder.append(order["order"]["order_type"])
-        itemorder.append(order["order"]["price_type"])
-        itemorder.append(order["status"]["cancel_quantity"])
-        itemorder.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%Y%m%d"))
-        itemorder.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%H:%M:%S"))
-        orderDF = orderDF.append([itemorder], columns = col)
+        l = []
+        l.append(order["contract"]["code"])
+        l.append(order["order"]["action"])
+        l.append(order["order"]["price"])
+        l.append(order["order"]["quantity"])
+        l.append(order["order"]["order_type"])
+        l.append(order["order"]["price_type"])
+        l.append(order["status"]["cancel_quantity"])
+        l.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%Y%m%d"))
+        l.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%H:%M:%S"))
+        itemorder.append(l)
+        
 
     if order_state == constant.OrderState.TFTDeal:
-        col = ["StockID", "Action", "Price", "Qty", "TradeDate", "TradeTime"]
-        itemdeal.append(order["code"])
-        itemdeal.append(order["action"]["value"])
-        itemdeal.append(order["price"])
-        itemdeal.append(order["quantity"])
-        itemdeal.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%Y%m%d"))
-        itemdeal.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%H:%M:%S"))
-        dealDF = dealDF.append([itemdeal], columns = col)
+        l = []
+        # col = ["StockID", "Action", "Price", "Qty", "TradeDate", "TradeTime"]
+        l.append(order["code"])
+        l.append(order["action"]["value"])
+        l.append(order["price"])
+        l.append(order["quantity"])
+        l.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%Y%m%d"))
+        l.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%H:%M:%S"))
+        itemdeal.append(l)
 
 def getNewBuyDFforGetDealOrder(api_in, buylist:list):
     outBuyDF = pd.DataFrame()
@@ -67,7 +70,18 @@ def checkSoldStatusForBuyDF(buyDF: pd.DataFrame, cbDF: pd.DataFrame)->pd.DataFra
             outBuyDF = outBuyDF.append(row)
     return outBuyDF 
         
-
+def ListToDF(item: list, func: str)->pd.DataFrame:
+    if item == []:
+        return pd.DataFrame()
+    if func == "order":
+        col = ["StockID", "Action", "Price", "Qty", "OrderType", "PriceType", "CancelQty", "TradeDate", "TradeTime"]
+    elif func == "deal":
+        col = ["StockID", "Action", "Price", "Qty", "TradeDate", "TradeTime"]
+    
+    return pd.DataFrame(item, columns = col)
+    
+orderDF = pd.DataFrame()
+dealDF = pd.DataFrame()
 check_secs = 30
 # 1.連接Server,指定帳號,同時active憑證[不給參數就使用模擬環境]
 # api = con().LoginToServerForStock()
@@ -105,17 +119,33 @@ for id in BuyList:
     con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Buy")
 
 tool.WaitingTimeDecide(check_secs)
+
+
+
+
 # 8.檢查一下成交的狀況(沒有成交資訊...就先全部Cancel,離開程式)有成交就算出成交後賣的上下限價
 # BuyDF = getNewBuyDFforGetDealOrder(api, BuyList)
+
+canceltime = "10:" + str(random.choice(range(10, 60)))
+
+ymd = datetime.now().strftime("%Y%m")
+path = f"./data/ActuralTrade/{ymd}"
+tool.checkPathExist(path)
+ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 while True:
     # 取得現行報價
     SnapShot = con(api).getMinSnapshotData(contracts)
 
-    if datetime.now().strftime("%H:%M") == "09:25":
+    if datetime.now().strftime("%H:%M") == canceltime:
         con(api).StockCancelOrder()
-        continue
 
+    if itemorder != []:
+        orderDF = orderDF.append(ListToDF(itemorder, "order"))
+        if not orderDF.empty:
+            fpath = f"{path}/order_{ymd}.xlsx"
+            file.GeneratorFromDF(orderDF, fpath)
+        itemorder = []
     # # 檢查回傳的資訊是否己經有賣出的(有賣出就不會再出現在BuyDF)
     # BuyDF = checkSoldStatusForBuyDF(BuyDF, dealDF)
     # # 若是空值,表示賣完了,就可以離開了
@@ -141,11 +171,11 @@ while True:
 ymd = datetime.now().strftime("%Y%m")
 path = f"./data/ActuralTrade/{ymd}"
 tool.checkPathExist(path)
-ymd = datetime.now().strftime("%Y%m%d")
+ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-if not orderDF.empty:
-    fpath = f"{path}/order_{ymd}.xlsx"
-    file.GeneratorFromDF(orderDF, fpath)
+# if not orderDF.empty:
+#     fpath = f"{path}/order_{ymd}.xlsx"
+#     file.GeneratorFromDF(orderDF, fpath)
 if not dealDF.empty:
     fpath = f"{path}/deal_{ymd}.xlsx"
     file.GeneratorFromDF(dealDF, fpath)

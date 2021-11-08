@@ -136,7 +136,8 @@ tool.WaitingTimeDecide(chk_sec)
 
 todayDF = minSnapDF
 
-for i in range(11, 541):
+# for i in range(11, 541):
+while True:
     minDF = con(api).getMinSnapshotData(contracts)
     # 收集今天的Snapshot
     todayDF = todayDF.append(minDF)
@@ -144,9 +145,10 @@ for i in range(11, 541):
     R0_BuyDF, SoldOut = checkPriceToSell(R0_BuyDF, minDF, "")
     R1_BuyDF, SoldOut = checkPriceToSell(R1_BuyDF, minDF, "")
 
-    if i == 530:
+    if datetime.now().strftime("%H:%M") == "13:25":
         R0_BuyDF, SoldOut = checkPriceToSell(R0_BuyDF, minDF, "X")
         R1_BuyDF, SoldOut = checkPriceToSell(R1_BuyDF, minDF, "X")
+        break
 
     tool.WaitingTimeDecide(chk_sec)
 
