@@ -13,7 +13,7 @@ RSIsmiDF = sim().useRSItoMakeResultDF(p_days = -1, RSI_period = 12)
 if not RSIsmiDF.empty:
     fpath = "./data/Simulation/RSI.xlsx"
     if tool.checkFileExist(fpath):
-        RSIsmiDF = RSIsmiDF.append(pd.read_excel(fpath))
+        RSIsmiDF = RSIsmiDF.append(pd.read_excel(fpath)).reset_index(drop=True)
         RSIsmiDF = RSIsmiDF.drop_duplicates(subset = ["TradeDate", "StockID", "Frequency"], keep = "first")
     file.GeneratorFromDF(RSIsmiDF, fpath)
     sys.exit()

@@ -131,11 +131,10 @@ canceltime = "10:" + str(random.choice(range(10, 60)))
 ymd = datetime.now().strftime("%Y%m")
 path = f"./data/ActuralTrade/{ymd}"
 tool.checkPathExist(path)
-ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 while True:
     # 取得現行報價
-    SnapShot = con(api).getMinSnapshotData(contracts)
+    # SnapShot = con(api).getMinSnapshotData(contracts)
 
     if datetime.now().strftime("%H:%M") == canceltime:
         con(api).StockCancelOrder()
@@ -143,6 +142,7 @@ while True:
     if itemorder != []:
         orderDF = orderDF.append(ListToDF(itemorder, "order"))
         if not orderDF.empty:
+            ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
             fpath = f"{path}/order_{ymd}.xlsx"
             file.GeneratorFromDF(orderDF, fpath)
         itemorder = []

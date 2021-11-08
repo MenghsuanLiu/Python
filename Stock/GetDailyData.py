@@ -1,7 +1,7 @@
 # %%
 import pandas as pd
 from datetime import date, timedelta, datetime
-from util import connect as con, indicator as ind, cfg, db, file, tool, craw, strategy as stg
+from util import connect as con, indicator as ind, cfg, db, file, tool, craw, strategy as stg, simulation as sim
 
 def writeDailyRawDataDB(api = None, StkDF: pd.DataFrame = None):
     tb = cfg().getValueByConfigFile(key = "tb_daily")
@@ -280,7 +280,15 @@ stkDFwithInd = ind(stkDFwithInd).getSignalByIndicator(inds = ["SMA", "SAR", "MAX
 writeResultDataToFile(stkDFwithInd)
 
 
+# 做盤後模擬測試
+RSIsmiDF = sim().useRSItoMakeResultDF(p_days = -1, RSI_period = 12)
 
+if not RSIsmiDF.empty:
+    fpath = "./data/Simulation/RSI.xlsx"
+    if tool.checkFileExist(fpath):
+        RSIsmiDF = RSIsmiDF.append(pd.read_excel(fpath)).reset_index(drop=True)
+        RSIsmiDF = RSIsmiDF.drop_duplicates(subset = ["TradeDate", "StockID", "Frequency"], keep = "first")
+    file.GeneratorFromDF(RSIsmiDF, fpath)
 
 
 # %%
