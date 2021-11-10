@@ -27,6 +27,7 @@ def placeOrderCallBack(order_state: constant.OrderState, order: dict):
         l.append(order["status"]["cancel_quantity"])
         l.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%Y%m%d"))
         l.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%H:%M:%S"))
+        l.append(datetime.now().strftime("%H:%M:%S.%f"))
         itemorder.append(l)
         
 
@@ -74,7 +75,7 @@ def ListToDF(item: list, func: str)->pd.DataFrame:
     if item == []:
         return pd.DataFrame()
     if func == "order":
-        col = ["StockID", "Action", "Price", "Qty", "OrderType", "PriceType", "CancelQty", "TradeDate", "TradeTime"]
+        col = ["StockID", "Action", "Price", "Qty", "OrderType", "PriceType", "CancelQty", "TradeDate", "TradeTime", "ReceiveTime"]
     elif func == "deal":
         col = ["StockID", "Action", "Price", "Qty", "TradeDate", "TradeTime"]
     

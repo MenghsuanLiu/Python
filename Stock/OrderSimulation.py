@@ -5,7 +5,6 @@ from datetime import date, datetime
 from util import connect as con, cfg, file, strategy as stg, tool, db, indicator as ind
 
 
-
 def checkPriceToSell(invDF, min_data, last_flg):
     # 有庫存真實資料要換掉
     # 1.留下未賣出的,invDF只有買進的清單
@@ -99,8 +98,6 @@ def collectBuyOrderDataRule0(stkDF, min5_data):
     
 
 
-
-
 chk_sec = 30
 
 # 1.取得連線(可以先不用憑證)
@@ -137,20 +134,28 @@ contracts = con(api).getContractForAPI(stkDF)
 # todayDF = minSnapDF
 minDF = pd.DataFrame()
 minsSnapDF = pd.DataFrame()
+R0_BuyDF = pd.DataFrame()
+R1_BuyDF = pd.DataFrame()
 rcdDF = pd.DataFrame()
 resultDF = pd.DataFrame()
 dotimes = 0
 while True:
     secDF = con(api).getMinSnapshotData(contracts)
     
-    # 每分鐘存留一版secDF,做成minDF
-    dotimes += 1
+    # 每分鐘存留一版secDF,做成minDF(0也要做一次)
     if dotimes % 2 == 0:
         minDF = minDF.append(secDF)
+    
+    # 09:05前就只要做snapshot
+    if datetime.now().strftime("%H:%M") < "09:05":
+        dotimes += 1
+        tool.WaitingTimeDecide(chk_sec)
+        continue
 
     # 原策略
     ## 用開盤5min的snapshot決定買入
-    if datetime.now().strftime("%H:%M") == "09:05":
+    if datetime.now().strftime("%H:%M") == "09:05" and R0_BuyDF.empty:
+        dotimes += 1
         # 依策略決定下單清單
         R0_BuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_01(secDF)
         R1_BuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_02(secDF)
@@ -159,9 +164,11 @@ while True:
         R1_BuyDF = getBuyTimeAndBuyPrice(R1_BuyDF, secDF)
         tool.WaitingTimeDecide(chk_sec)
         continue
-    ## 每30secs檢查
-    R0_BuyDF, SoldOut = checkPriceToSell(R0_BuyDF, secDF, "")
-    R1_BuyDF, SoldOut = checkPriceToSell(R1_BuyDF, secDF, "")
+
+    if not R0_BuyDF.empty:
+        ## 每30secs檢查
+        R0_BuyDF, SoldOut = checkPriceToSell(R0_BuyDF, secDF, "")
+        R1_BuyDF, SoldOut = checkPriceToSell(R1_BuyDF, secDF, "")
 
     # RSI策略
     try:
@@ -174,6 +181,7 @@ while True:
             wiIndDF.loc[(wiIndDF.RSI >= 70), "Sell"] = wiIndDF.Close
             # 取每個的最新的一筆
             wiIndDF = wiIndDF.groupby(by = ["StockID"]).tail(1).reset_index()
+        # 對每支Stock做檢查
         for idx, row in wiIndDF.iterrows():
             try:
                 BuyFlg = rcdDF[rcdDF.StockID == row.StockID].BuyFlg.values[0]
@@ -211,7 +219,7 @@ while True:
                 continue    # 換下一筆
 
             # 處理賣出的部份(處理完要做下一筆,若收盤就跳出)
-            if BuyFlg != None:
+            if BuyFlg == "X":
                 if row.Sell > 0:
                     resultDF.loc[(resultDF.StockID == row.StockID) & (resultDF.Frequency == Freq), "Sell"] = row.Sell
                     resultDF.loc[(resultDF.StockID == row.StockID) & (resultDF.Frequency == Freq), "SellTime"] = row.DateTime.strftime("%H:%M:%S")
@@ -230,7 +238,8 @@ while True:
         R0_BuyDF, SoldOut = checkPriceToSell(R0_BuyDF, secDF, "X")
         R1_BuyDF, SoldOut = checkPriceToSell(R1_BuyDF, secDF, "X")
         break
-
+    
+    dotimes += 1
     tool.WaitingTimeDecide(chk_sec)
 
 R0_TradeDF = getTradeResultDF(stkDF, R0_BuyDF, "R0")

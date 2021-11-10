@@ -250,19 +250,37 @@ class connect:
         self.api.place_order(Ctract, order)
 
     def StockCancelOrder(self, stkid:str = "all"):
+        data = []
         # 先更新一下
         self.api.update_status(self.api.stock_account)
         for i in range(0, len(self.api.list_trades())):
             if self.api.list_trades()[i].status.status.value != "Cancelled":
+                # <-log用        
+                l = []
+                l.append(self.api.list_trades()[i].contract.code)
+                l.append(self.api.list_trades()[i].status.status.value)
+                l.append(datetime.now().strftime("%H:%M:%S"))
+                data.append(l)
+                # ->log用        
                 if stkid != "all" and  self.api.list_trades()[i].contract.code == stkid:
                     self.api.cancel_order(self.api.list_trades()[i])
                     continue
                 # 以下是全刪要走的部份
-                self.api.cancel_order(self.api.list_trades()[i])
-                id = self.api.list_trades()[i].contract.code
-                ts = self.api.list_trades()[i].status.order_datetime.strftime("%Y/%m/%d %H:%M:%S")
-                print(f"己取消股票代碼:{id},於{ts}下的單")
-
+                try:
+                    self.api.cancel_order(self.api.list_trades()[i])
+                    id = self.api.list_trades()[i].contract.code
+                    ts = self.api.list_trades()[i].status.order_datetime.strftime("%Y/%m/%d %H:%M:%S")
+                    print(f"己取消股票代碼:{id},於{ts}下的單")
+                except:
+                    continue
+        # <-log用        
+        if data != []:
+            DF = pd.DataFrame(data, columns = ["StockID", "Status", "Time"])
+            path = "./data/ActuralTrade/" + datetime.now().strftime("%Y%m")
+            ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
+            fpath = f"{path}/cancellog_{ymd}.xlsx"
+            file.GeneratorFromDF(DF, fpath)
+        # ->log用        
         # if stkid == "all":
         #     for i in range(0, len(self.api.list_trades())):
         #         if self.api.list_trades()[i].status.status.value != "Cancelled":

@@ -16,3 +16,5 @@
 [E 2021-11-02 09:05:25,217 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] Topic: api/v1/order/place_order, Status Code is None.
 [E 2021-11-02 09:05:30,230 D:\Python_venv\37_stock\lib\site-packages\shioaji\shioaji.py:397:place_order] Topic: api/v1/order/place_order, Status Code is None.
 [E 2021-11-02 09:06:05,241 D:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {}
+[E 2021-11-09 10:31:00,467 D:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'detail': '無原委託內容', 'sts_code': 74006}}
+[E 2021-11-10 10:12:02,435 D:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'detail': '無原委託內容', 'sts_code': 74006}}
