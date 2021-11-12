@@ -187,11 +187,11 @@ while True:
                 BuyFlg = rcdDF[rcdDF.StockID == row.StockID].BuyFlg.values[0]
                 Freq = rcdDF[rcdDF.StockID == row.StockID].Freq.values[0]
             except:  
-                BuyFlg = None
+                BuyFlg = ""
                 Freq = 0
 
             # 處理買進的部份(處理完要做下一筆)
-            if row.Buy > 0 and BuyFlg == None:
+            if row.Buy > 0 and BuyFlg == "":
                 l = []
                 Freq += 1
                 # 處理結果Buy的部份
@@ -206,15 +206,24 @@ while True:
                 resultDF = resultDF.append(pd.DataFrame([l], columns = ["TradeDate", "StockID", "Frequency","BuyTime", "Buy", "SellTime", "Sell"]))
                 # 處理狀態的部份(先換有記錄的值,沒有再寫入)
                 
-                try:
-                    rcdDF.loc[rcdDF.StockID == row.StockID, "BuyFlg"] = "X"
-                    rcdDF.loc[rcdDF.StockID == row.StockID, "Freq"] = Freq
-                except:
+                if Freq == 1:
                     l = []
                     l.append(row.StockID)
                     l.append("X")
                     l.append(Freq)
                     rcdDF = rcdDF.append(pd.DataFrame([l], columns = ["StockID", "BuyFlg","Freq"]))
+                else:
+                    rcdDF.loc[rcdDF.StockID == row.StockID, "BuyFlg"] = "X"
+                    rcdDF.loc[rcdDF.StockID == row.StockID, "Freq"] = Freq
+                # try:
+                #     rcdDF.loc[rcdDF.StockID == row.StockID, "BuyFlg"] = "X"
+                #     rcdDF.loc[rcdDF.StockID == row.StockID, "Freq"] = Freq
+                # except:
+                #     l = []
+                #     l.append(row.StockID)
+                #     l.append("X")
+                #     l.append(Freq)
+                #     rcdDF = rcdDF.append(pd.DataFrame([l], columns = ["StockID", "BuyFlg","Freq"]))
                 tool.WaitingTimeDecide(chk_sec)
                 continue    # 換下一筆
 
