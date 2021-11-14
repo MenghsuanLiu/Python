@@ -405,8 +405,10 @@ class db:
         try:
             insertDF.to_sql(con = dbcon, name = self.tb_name, if_exists = "append", index = False)
             return print(f"Update Table {self.tb_name} Success!")
-        except:
-            return print(f"Fail to Update Table {self.tb_name}, Check It Please!!!!!")
+        except Exception as exc:
+            print(f"Fail to Update Table {self.tb_name}, Check It Please!!!!!")
+            print(exc)
+            return 
         
     def getMAXvalueFromDBTableColumn(self, tb_name:str = None, col_name:str = None):
         if tb_name:

@@ -7,8 +7,6 @@ from shioaji import constant
 from datetime import datetime
 from util import connect as con, file, strategy as stg, tool
 
-# %%
-
 itemorder = []
 itemdeal = []
 

@@ -18,3 +18,6 @@
 [E 2021-11-02 09:06:05,241 D:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {}
 [E 2021-11-09 10:31:00,467 D:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'detail': '無原委託內容', 'sts_code': 74006}}
 [E 2021-11-10 10:12:02,435 D:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'detail': '無原委託內容', 'sts_code': 74006}}
+[E 2021-11-13 12:48:07,516 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'token': '', 'accounts': [], 'detail': 'DPI-1010: not connected', 'ip_address': '60.250.206.5', 'client_name': ''}}
+[E 2021-11-13 12:49:30,556 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'token': '', 'accounts': [], 'detail': 'DPI-1010: not connected', 'ip_address': '60.250.206.6', 'client_name': ''}}
+[E 2021-11-13 12:50:05,232 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'token': '', 'accounts': [], 'detail': 'DPI-1010: not connected', 'ip_address': '60.250.206.6', 'client_name': ''}}

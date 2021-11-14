@@ -1,6 +1,5 @@
 # %%
 import pandas as pd
-
 from datetime import date, timedelta, datetime
 from util import connect as con, indicator as ind, cfg, db, file, tool, craw, strategy as stg, simulation as sim
 
@@ -42,10 +41,14 @@ def writeDailyMinsKbarDataToDB(api = None):
             udate = date.today() - timedelta(days = 300)
         if udate > date.today():
             continue
-        stkDF = con(api).getKbarData(stkid = row.StockID, sdate = udate.strftime("%Y-%m-%d"), edate = date.today().strftime("%Y-%m-%d")).filter(items = ["StockID",  "TradeDate", "TradeTime", "Open", "High", "Low", "Close", "Volume"])
+        stkDF = con(api).getKbarData(stkid = row.StockID, sdate = udate.strftime("%Y-%m-%d"), edate = date.today().strftime("%Y-%m-%d")).filter(items = ["StockID", "TradeDate", "TradeTime", "Open", "High", "Low", "Close", "Volume"])
         if stkDF.empty:
-            no_update.append(row.StockID)
+            # 不是遇到週末才需要show沒有成功的部份
+            if udate.weekday() not in (5, 6):
+                no_update.append(row.StockID)
             continue
+        stkDF = stkDF.drop_duplicates(subset = ["StockID", "TradeDate", "TradeTime"], keep = "first")
+        print(f"StockID: {row.StockID}")
         db().updateDFtoDB(stkDF, tb_name = tb)
 
     if no_update != []:
@@ -256,7 +259,6 @@ def writeResultDataToFile(fullDF: pd.DataFrame):
 
 api = con().LoginToServerForStock(simulate = False)
 BsData = con(api).getStockDataByCondition()
-
 writeDailyMinsKbarDataToDB(api)
 writeDailyKbarDataToDB(BsData)
 writeDailyRawDataDB(api, BsData)    # 這支去補足前面漏的
@@ -288,6 +290,7 @@ if not RSIsmiDF.empty:
     fpath = "./data/Simulation/RSI.xlsx"
     if tool.checkFileExist(fpath):
         RSIsmiDF = RSIsmiDF.append(pd.read_excel(fpath)).reset_index(drop=True)
+        RSIsmiDF[["TradeDate", "StockID"]] = RSIsmiDF[["TradeDate", "StockID"]].astype(str)
         RSIsmiDF = RSIsmiDF.drop_duplicates(subset = ["TradeDate", "StockID", "Frequency"], keep = "first")
     file.GeneratorFromDF(RSIsmiDF, fpath)
 
