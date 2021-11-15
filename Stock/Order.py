@@ -85,6 +85,7 @@ check_secs = 30
 # 1.連接Server,指定帳號,同時active憑證[不給參數就使用模擬環境]
 # api = con().LoginToServerForStock()
 api = con().LoginToServerForStock(simulate = False, ca_acct = "chris")
+
 # 註:更換另一個帳號
 # con(api).ChangeTreadAccount(ca_acct = "lydia")
 

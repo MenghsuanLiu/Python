@@ -45,6 +45,7 @@ class cfg:
 class connect: 
     def __init__(self, insrt_api = sj.Shioaji) -> None:
         self.acct_mapping = "./config/account.json"
+        self.ca_mapping = "./config/ca.json"
         self.loginfile = cfg().getValueByConfigFile(key = "login")
         self.api = insrt_api
         self.simulation = True  # 是否為測試環境
@@ -53,6 +54,8 @@ class connect:
         self.ca_active = False
         self.ca_acct = "chris"
         self.ca_userid = None
+        self.ca_passwd = "ca_pwd"
+        self.ca_path = "ca_path"
         self.start_time = "09:00:00"
         self.end_time = "13:30:00"
         self.startdate = datetime.today().strftime("%Y-%m-%d")
@@ -137,9 +140,13 @@ class connect:
             return print(f"匯入憑證失敗,請檢查File Status!")
     
     def InsertCAFile(self):
+        pwdDict = cfg(self.ca_mapping).getValueByConfigFile(key = self.ca_passwd) 
+        pwd = pwdDict.get(self.ca_userid) # pwdDict[self.ca_userid]
+        cafile = cfg(self.ca_mapping).getValueByConfigFile(key = self.ca_path).replace("<ID>", self.ca_userid)
         remsg = self.api.activate_ca(
-                                    ca_path = fr"C:\ekey\551\{self.ca_userid}\S\Sinopac.pfx",
-                                    ca_passwd = self.ca_userid,
+                                    # ca_path = fr"D:\MyDocument\OneDrive\ekey\551\{self.ca_userid}\S\Sinopac.pfx",
+                                    ca_path = cafile,
+                                    ca_passwd = pwd,
                                     person_id = self.ca_userid
                                 )
         return remsg
