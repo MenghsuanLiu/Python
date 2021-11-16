@@ -143,25 +143,15 @@ R1_BuyDF = pd.DataFrame()
 recordDF = pd.DataFrame()
 resultDF = pd.DataFrame()
 dotimes = 0
+
 while True:
     secDF = con(api).getMinSnapshotData(contracts)
-    
-    # 每分鐘存留一版secDF,做成minDF(0也要做一次)
-    if dotimes % 2 == 0:
-        minDF = minDF.append(secDF)
-    
     # 09:05前就只要做snapshot
     if datetime.now().strftime("%H:%M") < "09:05":
-    # if datetime.now().strftime("%H:%M") < getExcuteTime():
-        dotimes += 1
         tool.WaitingTimeDecide(chk_sec)
         continue
-
-    # 原策略
     ## 用開盤5min的snapshot決定買入
     if datetime.now().strftime("%H:%M") == "09:05" and R0_BuyDF.empty:
-    # if datetime.now().strftime("%H:%M") == getExcuteTime() and R0_BuyDF.empty:
-        dotimes += 1
         # 依策略決定下單清單
         R0_BuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_01(secDF)
         R1_BuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_02(secDF)
@@ -171,95 +161,17 @@ while True:
         tool.WaitingTimeDecide(chk_sec)
         continue
 
- 
     ## 每30secs檢查
     R0_BuyDF, SoldOut = checkPriceToSell(R0_BuyDF, secDF, "")
     R1_BuyDF, SoldOut = checkPriceToSell(R1_BuyDF, secDF, "")
-
-    # RSI策略
-    # 9:13開始才要檢查RSI
-    if datetime.now().strftime("%H:%M") >= "09:13" and dotimes % 2 == 0:
-        minsSnapDF = minDF.sort_values(by = ["StockID", "DateTime"]).reset_index(drop = True)
-        wiIndDF = ind(minsSnapDF).addRSIvalueToDF(period = 12, cnam_noprd = True)
-        wiIndDF["Buy"] = 0
-        wiIndDF["Sell"] = 0
-        wiIndDF.loc[(wiIndDF.RSI <= 30) & (wiIndDF.RSI > 0), "Buy"] = wiIndDF.Close
-        wiIndDF.loc[(wiIndDF.RSI >= 70), "Sell"] = wiIndDF.Close
-        # 取每個的最新的一筆
-        wiIndDF = wiIndDF.groupby(by = ["StockID"]).tail(1).reset_index()
-        
-        # 對每支Stock做檢查
-        for idx, row in wiIndDF.iterrows():
-            try:
-                BuyFlg = recordDF[recordDF.StockID == row.StockID].BuyFlg.values[0]
-                Freq = recordDF[recordDF.StockID == row.StockID].Freq.values[0]
-            except:  
-                BuyFlg = ""
-                Freq = 0
-
-            # 處理買進的部份(處理完要做下一筆)
-            if row.Buy > 0 and BuyFlg == "":
-                l = []
-                Freq += 1
-                # 處理結果Buy的部份
-                l.append(row.DateTime.strftime("%Y%m%d"))
-                l.append(row.StockID)
-                l.append(Freq)                    
-                l.append(row.DateTime.strftime("%H:%M:%S"))
-                l.append(row.Buy)
-                l.append("00:00:00")
-                l.append(0)
-                # l只有一層,在產生DF時要再給一個[]
-                resultDF = resultDF.append(pd.DataFrame([l], columns = ["TradeDate", "StockID", "Frequency","BuyTime", "Buy", "SellTime", "Sell"]))
-                # 處理狀態的部份(先換有記錄的值,沒有再寫入)
-                
-                if Freq == 1:
-                    l = []
-                    l.append(row.StockID)
-                    l.append("X")
-                    l.append(Freq)
-                    recordDF = recordDF.append(pd.DataFrame([l], columns = ["StockID", "BuyFlg","Freq"]))
-                else:
-                    recordDF.loc[recordDF.StockID == row.StockID, "BuyFlg"] = "X"
-                    recordDF.loc[recordDF.StockID == row.StockID, "Freq"] = Freq
-                # try:
-                #     rcdDF.loc[rcdDF.StockID == row.StockID, "BuyFlg"] = "X"
-                #     rcdDF.loc[rcdDF.StockID == row.StockID, "Freq"] = Freq
-                # except:
-                #     l = []
-                #     l.append(row.StockID)
-                #     l.append("X")
-                #     l.append(Freq)
-                #     rcdDF = rcdDF.append(pd.DataFrame([l], columns = ["StockID", "BuyFlg","Freq"]))
-                continue    # 換下一筆
-
-            # 處理賣出的部份(處理完要做下一筆,若收盤就跳出)
-            if BuyFlg == "X":
-                
-                if row.Sell > 0:
-                    resultDF.loc[(resultDF.StockID == row.StockID) & (resultDF.Frequency == Freq), "Sell"] = row.Sell
-                    resultDF.loc[(resultDF.StockID == row.StockID) & (resultDF.Frequency == Freq), "SellTime"] = row.DateTime.strftime("%H:%M:%S")
-
-                    recordDF.loc[recordDF.StockID == row.StockID, "BuyFlg"] = ""
-                    continue    # 換下一筆
-                # 做收盤前的清倉
-                if datetime.now().strftime("%H:%M") >= "13:25":
-                    # Freq  += 1
-                    resultDF.loc[(resultDF.StockID == row.StockID) & (resultDF.Frequency == Freq), "Sell"] = row.Close
-                    resultDF.loc[(resultDF.StockID == row.StockID) & (resultDF.Frequency == Freq), "SellTime"] = row.DateTime.strftime("%H:%M:%S")
-    
     if datetime.now().strftime("%H:%M") >= "13:25":
         R0_BuyDF, SoldOut = checkPriceToSell(R0_BuyDF, secDF, "X")
         R1_BuyDF, SoldOut = checkPriceToSell(R1_BuyDF, secDF, "X")
         break
     
-    dotimes += 1
     tool.WaitingTimeDecide(chk_sec)
-
 R0_TradeDF = getTradeResultDF(stkDF, R0_BuyDF, "R0")
 R1_TradeDF = getTradeResultDF(stkDF, R1_BuyDF, "R1")
-
-
 # 準備存檔資料
 ymd = date.today().strftime("%Y%m%d")
 trade_path = cfg().getValueByConfigFile(key = "tradepath") + f"/{ymd[0:6]}"
@@ -267,9 +179,135 @@ tool.checkPathExist(trade_path)
 # Rule0 / Rule1處理檔案的部份
 file.GeneratorFromDF(R0_TradeDF, f"{trade_path}/Trade_{ymd}_R0.xlsx")
 file.GeneratorFromDF(R1_TradeDF, f"{trade_path}/Trade_{ymd}_R1.xlsx")
-# RSI處理檔案的部份
-resultDF["Profit"] = resultDF.Sell - resultDF.Buy
-file.GeneratorFromDF(resultDF, f"{trade_path}/RSI_onlinesim_{ymd}.xlsx")
+
+
+# while True:
+#     secDF = con(api).getMinSnapshotData(contracts)
+    
+#     # 每分鐘存留一版secDF,做成minDF(0也要做一次)
+#     if dotimes % 2 == 0:
+#         minDF = minDF.append(secDF)
+    
+#     # 09:05前就只要做snapshot
+#     if datetime.now().strftime("%H:%M") < "09:05":
+#     # if datetime.now().strftime("%H:%M") < getExcuteTime():
+#         dotimes += 1
+#         tool.WaitingTimeDecide(chk_sec)
+#         continue
+
+#     # 原策略
+#     ## 用開盤5min的snapshot決定買入
+#     if datetime.now().strftime("%H:%M") == "09:05" and R0_BuyDF.empty:
+#     # if datetime.now().strftime("%H:%M") == getExcuteTime() and R0_BuyDF.empty:
+#         dotimes += 1
+#         # 依策略決定下單清單
+#         R0_BuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_01(secDF)
+#         R1_BuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_02(secDF)
+#         # 下單,取買價及時間(先用5min Close當買價)
+#         R0_BuyDF = getBuyTimeAndBuyPrice(R0_BuyDF, secDF)
+#         R1_BuyDF = getBuyTimeAndBuyPrice(R1_BuyDF, secDF)
+#         tool.WaitingTimeDecide(chk_sec)
+#         continue
+
+ 
+#     ## 每30secs檢查
+#     R0_BuyDF, SoldOut = checkPriceToSell(R0_BuyDF, secDF, "")
+#     R1_BuyDF, SoldOut = checkPriceToSell(R1_BuyDF, secDF, "")
+
+#     # RSI策略
+#     # 9:13開始才要檢查RSI
+#     if datetime.now().strftime("%H:%M") >= "09:13" and dotimes % 2 == 0:
+#         minsSnapDF = minDF.sort_values(by = ["StockID", "DateTime"]).reset_index(drop = True)
+#         wiIndDF = ind(minsSnapDF).addRSIvalueToDF(period = 12, cnam_noprd = True)
+#         wiIndDF["Buy"] = 0
+#         wiIndDF["Sell"] = 0
+#         wiIndDF.loc[(wiIndDF.RSI <= 30) & (wiIndDF.RSI > 0), "Buy"] = wiIndDF.Close
+#         wiIndDF.loc[(wiIndDF.RSI >= 70), "Sell"] = wiIndDF.Close
+#         # 取每個的最新的一筆
+#         wiIndDF = wiIndDF.groupby(by = ["StockID"]).tail(1).reset_index()
+        
+#         # 對每支Stock做檢查
+#         for idx, row in wiIndDF.iterrows():
+#             try:
+#                 BuyFlg = recordDF[recordDF.StockID == row.StockID].BuyFlg.values[0]
+#                 Freq = recordDF[recordDF.StockID == row.StockID].Freq.values[0]
+#             except:  
+#                 BuyFlg = ""
+#                 Freq = 0
+
+#             # 處理買進的部份(處理完要做下一筆)
+#             if row.Buy > 0 and BuyFlg == "":
+#                 l = []
+#                 Freq += 1
+#                 # 處理結果Buy的部份
+#                 l.append(row.DateTime.strftime("%Y%m%d"))
+#                 l.append(row.StockID)
+#                 l.append(Freq)                    
+#                 l.append(row.DateTime.strftime("%H:%M:%S"))
+#                 l.append(row.Buy)
+#                 l.append("00:00:00")
+#                 l.append(0)
+#                 # l只有一層,在產生DF時要再給一個[]
+#                 resultDF = resultDF.append(pd.DataFrame([l], columns = ["TradeDate", "StockID", "Frequency","BuyTime", "Buy", "SellTime", "Sell"]))
+#                 # 處理狀態的部份(先換有記錄的值,沒有再寫入)
+                
+#                 if Freq == 1:
+#                     l = []
+#                     l.append(row.StockID)
+#                     l.append("X")
+#                     l.append(Freq)
+#                     recordDF = recordDF.append(pd.DataFrame([l], columns = ["StockID", "BuyFlg","Freq"]))
+#                 else:
+#                     recordDF.loc[recordDF.StockID == row.StockID, "BuyFlg"] = "X"
+#                     recordDF.loc[recordDF.StockID == row.StockID, "Freq"] = Freq
+#                 # try:
+#                 #     rcdDF.loc[rcdDF.StockID == row.StockID, "BuyFlg"] = "X"
+#                 #     rcdDF.loc[rcdDF.StockID == row.StockID, "Freq"] = Freq
+#                 # except:
+#                 #     l = []
+#                 #     l.append(row.StockID)
+#                 #     l.append("X")
+#                 #     l.append(Freq)
+#                 #     rcdDF = rcdDF.append(pd.DataFrame([l], columns = ["StockID", "BuyFlg","Freq"]))
+#                 continue    # 換下一筆
+
+#             # 處理賣出的部份(處理完要做下一筆,若收盤就跳出)
+#             if BuyFlg == "X":
+                
+#                 if row.Sell > 0:
+#                     resultDF.loc[(resultDF.StockID == row.StockID) & (resultDF.Frequency == Freq), "Sell"] = row.Sell
+#                     resultDF.loc[(resultDF.StockID == row.StockID) & (resultDF.Frequency == Freq), "SellTime"] = row.DateTime.strftime("%H:%M:%S")
+
+#                     recordDF.loc[recordDF.StockID == row.StockID, "BuyFlg"] = ""
+#                     continue    # 換下一筆
+#                 # 做收盤前的清倉
+#                 if datetime.now().strftime("%H:%M") >= "13:25":
+#                     # Freq  += 1
+#                     resultDF.loc[(resultDF.StockID == row.StockID) & (resultDF.Frequency == Freq), "Sell"] = row.Close
+#                     resultDF.loc[(resultDF.StockID == row.StockID) & (resultDF.Frequency == Freq), "SellTime"] = row.DateTime.strftime("%H:%M:%S")
+    
+#     if datetime.now().strftime("%H:%M") >= "13:25":
+#         R0_BuyDF, SoldOut = checkPriceToSell(R0_BuyDF, secDF, "X")
+#         R1_BuyDF, SoldOut = checkPriceToSell(R1_BuyDF, secDF, "X")
+#         break
+    
+#     dotimes += 1
+#     tool.WaitingTimeDecide(chk_sec)
+
+# R0_TradeDF = getTradeResultDF(stkDF, R0_BuyDF, "R0")
+# R1_TradeDF = getTradeResultDF(stkDF, R1_BuyDF, "R1")
+
+
+# # 準備存檔資料
+# ymd = date.today().strftime("%Y%m%d")
+# trade_path = cfg().getValueByConfigFile(key = "tradepath") + f"/{ymd[0:6]}"
+# tool.checkPathExist(trade_path)
+# # Rule0 / Rule1處理檔案的部份
+# file.GeneratorFromDF(R0_TradeDF, f"{trade_path}/Trade_{ymd}_R0.xlsx")
+# file.GeneratorFromDF(R1_TradeDF, f"{trade_path}/Trade_{ymd}_R1.xlsx")
+# # RSI處理檔案的部份
+# resultDF["Profit"] = resultDF.Sell - resultDF.Buy
+# file.GeneratorFromDF(resultDF, f"{trade_path}/RSI_onlinesim_{ymd}.xlsx")
 
 # %%
 # 每分鐘抓的SnapShot資料存到DB中

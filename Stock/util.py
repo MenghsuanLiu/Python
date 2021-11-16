@@ -261,7 +261,7 @@ class connect:
         # 先更新一下
         self.api.update_status(self.api.stock_account)
         for i in range(0, len(self.api.list_trades())):
-            if self.api.list_trades()[i].status.status.value != "Cancelled":
+            if self.api.list_trades()[i].status.status.value != "Cancelled" and self.api.list_trades()[i].status.status.value != "Filled":
                 # <-log用        
                 l = []
                 l.append(self.api.list_trades()[i].contract.code)
@@ -296,7 +296,6 @@ class connect:
         #             ts = self.api.list_trades()[i].status.order_datetime.strftime("%Y/%m/%d %H:%M:%S")
         #             print(f"己取消股票代碼:{id},於{ts}下的單")
  
-
     def getStockDataByCondition(self, udb:bool = True, market = None):
         if market:
             self.markets = market

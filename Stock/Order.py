@@ -3,13 +3,16 @@
 import pandas as pd
 import random
 import sys
+import time
 from shioaji import constant
 from datetime import datetime
 from util import connect as con, file, strategy as stg, tool
 
 itemorder = []
 itemdeal = []
-
+GorderDF = pd.DataFrame()
+GdealDF = pd.DataFrame()
+BuyDF = pd.DataFrame()
 def placeOrderCallBack(order_state: constant.OrderState, order: dict):
     # # 用global才可以告訴function要修改的是全域變數
     # global orderDF, dealDF
@@ -38,15 +41,16 @@ def placeOrderCallBack(order_state: constant.OrderState, order: dict):
         l.append(order["quantity"])
         l.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%Y%m%d"))
         l.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%H:%M:%S"))
+        l.append(datetime.now().strftime("%H:%M:%S.%f"))
         itemdeal.append(l)
 
 def getNewBuyDFforGetDealOrder(api_in, buylist:list):
     outBuyDF = pd.DataFrame()
     outbuylist = []
-    if dealDF.empty:
+    if GdealDF.empty:
         con(api_in).StockCancelOrder()
         sys.exit()
-    for idx, row in dealDF.iterrows():        
+    for idx, row in GdealDF.iterrows():        
         if row.Action == "Buy":
             l = []
             outbuylist.append(row.StockID)
@@ -79,8 +83,21 @@ def ListToDF(item: list, func: str)->pd.DataFrame:
     
     return pd.DataFrame(item, columns = col)
     
-orderDF = pd.DataFrame()
-dealDF = pd.DataFrame()
+
+def callbackListDataToDF():
+    global GorderDF, GdealDF, itemorder, itemdeal
+    if itemorder != []:
+        col = ["StockID", "Action", "Price", "Qty", "OrderType", "PriceType", "CancelQty", "TradeDate", "TradeTime", "ReceiveTime"]
+        GorderDF = GorderDF.append(pd.DataFrame(itemorder, columns = col))
+        itemorder.clear()
+
+    if  itemdeal != []:
+        col = ["StockID", "Action", "Price", "Qty", "TradeDate", "TradeTime", "ReceiveTime"]
+        GdealDF = GdealDF.append(pd.DataFrame(itemdeal, columns = col))
+        itemdeal.clear()
+    
+# orderDF = pd.DataFrame()
+# dealDF = pd.DataFrame()
 check_secs = 30
 # 1.連接Server,指定帳號,同時active憑證[不給參數就使用模擬環境]
 # api = con().LoginToServerForStock()
@@ -115,13 +132,30 @@ BuyList = tool.DFcolumnToList(stgBuyDF, "StockID")
 # if len(BuyList) > 10:
 #     BuyList = random.sample(BuyList, k = 1)
 
-for id in BuyList:
-    con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Buy")
+# 7.選一筆做漲停板(買的到),其他的部份跌停板(買不到)
+chooseID = random.sample(BuyList, k = 1)
 
+for id in BuyList:
+    if id in chooseID:
+        con(api).StockNormalBuySell(stkid = id, price = "up", qty = 1, action = "Buy")
+        continue
+    con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Buy")
+# 8.休息5秒,取得成交回報
+time.sleep(5)
+callbackListDataToDF()
+if not GorderDF.empty:
+    file.GeneratorFromDF(GorderDF, "./data/ActuralTrade/test_global.xlsx")
 tool.WaitingTimeDecide(check_secs)
 
-
-
+for idx, row in GdealDF.iterrows():       
+    if row.Action == "Buy":
+        l = []
+        l.append(row.StockID)
+        l.append(row.Price)
+        l.append(round(int(row.Price) * 1.01, 1))
+        l.append(round(int(row.Price) * (1 - 0.02), 1))
+        BuyDF = BuyDF.append([l], columns = ["StockID", "Buy", "UP", "DOWN"])
+file.GeneratorFromDF(BuyDF, "./data/ActuralTrade/buy.xlsx")
 
 # 8.檢查一下成交的狀況(沒有成交資訊...就先全部Cancel,離開程式)有成交就算出成交後賣的上下限價
 # BuyDF = getNewBuyDFforGetDealOrder(api, BuyList)
@@ -131,40 +165,37 @@ canceltime = "10:" + str(random.choice(range(10, 60)))
 ymd = datetime.now().strftime("%Y%m")
 path = f"./data/ActuralTrade/{ymd}"
 tool.checkPathExist(path)
+if not BuyDF.empty:
+    bkBuyDF = BuyDF.copy(deep = True)   # deep = True, copy才不會被改變原來的BuyDF
 
 while True:
+    callbackListDataToDF()
     # 取得現行報價
-    # SnapShot = con(api).getMinSnapshotData(contracts)
+    SnapShot = con(api).getMinSnapshotData(contracts)
 
     if datetime.now().strftime("%H:%M") == canceltime:
         con(api).StockCancelOrder()
-
-    if itemorder != []:
-        orderDF = orderDF.append(ListToDF(itemorder, "order"))
-        if not orderDF.empty:
-            ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
-            fpath = f"{path}/order_{ymd}.xlsx"
-            file.GeneratorFromDF(orderDF, fpath)
-        itemorder = []
-    # # 檢查回傳的資訊是否己經有賣出的(有賣出就不會再出現在BuyDF)
-    # BuyDF = checkSoldStatusForBuyDF(BuyDF, dealDF)
-    # # 若是空值,表示賣完了,就可以離開了
-    # if BuyDF.empty:
-    #     break
-
-    # # 盤中遇到價格>=買價的1% or 價格<=買價的2%(就做賣單: Sell + 跌停價)
-    # for idx, row in BuyDF.iterrows():
-    #     nowprice = SnapShot[SnapShot.StockID == row.StockID].Close.values[0]
-    #     if nowprice >= row.UP or nowprice <= row.DOWN:
-    #         con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Sell")
-    #         continue
-
-    # # 收盤前5mins要清倉(Sell + 跌停價)
-    if datetime.now().strftime("%H:%M") == "13:25":
-    #     for id in tool.DFcolumnToList(BuyDF, "StockID"):
-    #         con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Sell")
-        break  
     
+    # 不是空值才需要往下檢查是否要賣出
+    if not BuyDF.empty:
+        BuyDF = checkSoldStatusForBuyDF(bkBuyDF, GdealDF)
+
+        # 盤中遇到價格>=買價的1% or 價格<=買價的2%(就做賣單: Sell + 跌停價)
+        for idx, row in BuyDF.iterrows():
+            nowprice = SnapShot[SnapShot.StockID == row.StockID].Close.values[0]
+            if nowprice >= row.UP or nowprice <= row.DOWN:
+                con(api).StockNormalBuySell(stkid = str(row.StockID), price = "down", qty = 1, action = "Sell")
+                continue
+
+        # # 收盤前5mins要清倉(Sell + 跌停價)
+        if datetime.now().strftime("%H:%M") == "13:25":
+            SellList = tool.DFcolumnToList(BuyDF, "StockID")
+            for id in SellList:
+                con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Sell")
+            break  
+    if datetime.now().strftime("%H:%M") >= "13:25":
+        break
+
     tool.WaitingTimeDecide(check_secs)
 
 
@@ -173,12 +204,12 @@ path = f"./data/ActuralTrade/{ymd}"
 tool.checkPathExist(path)
 ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-# if not orderDF.empty:
-#     fpath = f"{path}/order_{ymd}.xlsx"
-#     file.GeneratorFromDF(orderDF, fpath)
-if not dealDF.empty:
+if not GorderDF.empty:
+    fpath = f"{path}/order_{ymd}.xlsx"
+    file.GeneratorFromDF(GorderDF, fpath)
+if not GdealDF.empty:
     fpath = f"{path}/deal_{ymd}.xlsx"
-    file.GeneratorFromDF(dealDF, fpath)
+    file.GeneratorFromDF(GdealDF, fpath)
 
 
 
