@@ -4,7 +4,6 @@ import time
 from datetime import date, datetime, timedelta
 from util import connect as con, cfg, file, strategy as stg, tool, db, indicator as ind, simulation as sim
 
-
 def checkPriceToSell(invDF, min_data, last_flg):
     # 有庫存真實資料要換掉
     # 1.留下未賣出的,invDF只有買進的清單
@@ -102,47 +101,25 @@ def getExcuteTime():
         extime = (datetime.now() + timedelta(minutes = 2)).strftime("%H:%M")
     return extime
 
+
+# 先檢查資料夾是否存在..沒有就建立
+tool.checkCreateYearMonthPath()
+
 chk_sec = 30
 
-# 1.取得連線(可以先不用憑證)
-api = con().LoginToServerForStock(simulate = False)
+# 1.連接Server,指定帳號(預設chris),使用的CA(預設None)
+api = con().ServerConnectLogin( user = "lydia")
 
-# # 2.設定成交即時回報
-# api.set_order_callback(placeOrderCallBack)
-
-# 3.依策略決定下單清單
+# 2.依策略決定下單清單
 stkDF_new = file().getLastFocusStockDF()
-stkDF = pd.DataFrame()
 stkDF = stg(stkDF_new).getFromFocusOnByStrategy()
 
-
-# 4.組合需要抓價量的Stocks
+# 3.組合需要抓價量的Stocks
 contracts = con(api).getContractForAPI(stkDF)
 
-# # 5.取得開盤後5min的OHLC的值(測試時會自動立即run)
-# minSnapDF = con(api).getAfterOpenTimesSnapshotData(contract = contracts, nmin_run = 5)
-
-# # 6.依買的策略產生BuyDF
-# # BuyList1 = tool.DFcolumnToList(stg(stkDF).BuyStrategyFromOpenSnapDF_01(minSnapDF), "StockID")
-# # BuyList2 = tool.DFcolumnToList(stg(stkDF).BuyStrategyFromOpenSnapDF_02(minSnapDF), "StockID")
-# R0_BuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_01(minSnapDF)
-# R1_BuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_02(minSnapDF)
-
-# # 6.1.下單,取買價及時間(先用5min Close當買價)
-# R0_BuyDF = getBuyTimeAndBuyPrice(R0_BuyDF, minSnapDF)
-# R1_BuyDF = getBuyTimeAndBuyPrice(R1_BuyDF, minSnapDF)
-
-# # 7.30secs後開始檢查賣市價..
-# tool.WaitingTimeDecide(chk_sec)
-
-# todayDF = minSnapDF
-minDF = pd.DataFrame()
-minsSnapDF = pd.DataFrame()
 R0_BuyDF = pd.DataFrame()
 R1_BuyDF = pd.DataFrame()
-recordDF = pd.DataFrame()
 resultDF = pd.DataFrame()
-dotimes = 0
 
 while True:
     secDF = con(api).getMinSnapshotData(contracts)
@@ -150,6 +127,7 @@ while True:
     if datetime.now().strftime("%H:%M") < "09:05":
         tool.WaitingTimeDecide(chk_sec)
         continue
+    
     ## 用開盤5min的snapshot決定買入
     if datetime.now().strftime("%H:%M") == "09:05" and R0_BuyDF.empty:
         # 依策略決定下單清單
@@ -170,12 +148,12 @@ while True:
         break
     
     tool.WaitingTimeDecide(chk_sec)
+
 R0_TradeDF = getTradeResultDF(stkDF, R0_BuyDF, "R0")
 R1_TradeDF = getTradeResultDF(stkDF, R1_BuyDF, "R1")
 # 準備存檔資料
 ymd = date.today().strftime("%Y%m%d")
 trade_path = cfg().getValueByConfigFile(key = "tradepath") + f"/{ymd[0:6]}"
-tool.checkPathExist(trade_path)
 # Rule0 / Rule1處理檔案的部份
 file.GeneratorFromDF(R0_TradeDF, f"{trade_path}/Trade_{ymd}_R0.xlsx")
 file.GeneratorFromDF(R1_TradeDF, f"{trade_path}/Trade_{ymd}_R1.xlsx")

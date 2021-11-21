@@ -44,18 +44,24 @@ class cfg:
 
 class connect: 
     def __init__(self, insrt_api = sj.Shioaji) -> None:
-        self.acct_mapping = "./config/account.json"
-        self.ca_mapping = "./config/ca.json"
-        self.loginfile = cfg().getValueByConfigFile(key = "login")
         self.api = insrt_api
+        self.acct_file = "./config/account.json"    # 帳號設定檔
         self.simulation = True  # 是否為測試環境
-        self.id = "PAPIUSER0" + str(random.randint(1,8))
-        self.pwd = "2222"
-        self.ca_active = False
-        self.ca_acct = "chris"
-        self.ca_userid = None
-        self.ca_passwd = "ca_pwd"
-        self.ca_path = "ca_path"
+        self.id = "PAPIUSER0" + str(random.randint(1,8))    # 測試環境帳號
+        self.pwd = "2222"   # 測試環境密碼
+        self.ca_acct = "chris"  # 憑證預設使用者名
+        self.ca_userID = None   # 憑證ID(身份證字號)
+        self.ca_cuname = None   # 憑證裡面對應的中文名
+        # 在json中的key
+        self.key_login = "login_usr"
+        self.key_tradeacct = "trade_account"
+        self.key_capwd = "ca_pwd"
+        self.key_capath = "ca_path"
+        
+        self.opening = "09:00"
+
+
+
         self.start_time = "09:00:00"
         self.end_time = "13:30:00"
         self.startdate = datetime.today().strftime("%Y-%m-%d")
@@ -70,100 +76,83 @@ class connect:
         self.trade_action = "Buy"
         self.trade_qty = 1
         
-        
-    def LoginToServerForStock(self, simulate: bool = True, id = None, pwd = None, ca_acct = None):
-        # 模擬!=True self.simulation就要置換,同時ca_acct有值表示要做憑證的active
-        # **如果是模擬=>ca_acct不管是否有值都不會active憑證
-        if not simulate:
-            self.simulation = simulate
-            # 當use_acct != None時就取代self.ca_acct
-            if ca_acct:            
-               self.ca_active = True
-               self.ca_acct = ca_acct
+    def ServerConnectLogin(self, simulte: bool = False, user: str = "chris", ca: str = None):
+        self.api = sj.Shioaji(simulation = simulte)
+        if simulte == False:
+            idpwd_Dict = cfg(self.acct_file).getValueByConfigFile(key = self.key_login)
+            self.id = idpwd_Dict.get(user.lower())[0]
+            self.pwd = idpwd_Dict.get(user.lower())[1]
+            env_name = "Actural"
         else:
-            if ca_acct:
-                print("模擬環境不需要啟用憑證!!")
-        # 如果id及pwd有給,就用給的取代預設
-        if id and pwd:
-            self.id = id
-            self.pwd = pwd           
-
+            env_name = "Simulation"         
+        
         try:
-            # 登入 shioaji
-            self.api = sj.Shioaji(simulation = self.simulation)
-            # 實體機: 讀file登入
-            if self.simulation == False:
-                with open(self.loginfile, "r") as f:
-                    login_cfg = json.loads(f.read())
-                self.api.login(**login_cfg, contracts_timeout = 0)
-                print("Login Actural Environment Success!!")
-            # 測試機: 直接給帳密    
-            else:
-                self.api.login(person_id = self.id, passwd = self.pwd)
-                print(f"Login Simulation Environment({self.id}) Success")
-            
+            self.api.login(person_id = self.id, passwd = self.pwd, contracts_timeout = 0)
+            print(f"Login {env_name} Environment Success!!({self.id})")
+            if env_name == "Actural" and ca:
+                self.ca_acct = ca
+                self.SetTreadAccount()
+                self.InsertCAFile()
+            return self.api
         except Exception as exc:
-            return print(f"id = {self.id}, pwd = {self.pwd}...{exc}") 
+            return print(f"user: {self.id}, pwd: {self.pwd}, Login Fail!...{exc}") 
 
-        # 若是前面判斷要active ca就要做這段
-        if self.ca_active == True:
-            self.SetTreadAccount()            
-            
-        return self.api
+    # trade_type (S:股票 F:期貨)
+    def SetTreadAccount(self, trade_type: str = "S"):
+        acctDict = cfg(self.acct_file).getValueByConfigFile(key = self.key_tradeacct)
+        acctID = acctDict.get(self.ca_acct)
 
-    # tread_type (S:股票 F:期貨)
-    def SetTreadAccount(self, tread_type = "S"):
-        acctid = cfg(self.acct_mapping).getValueByConfigFile(key = self.ca_acct.lower())        
         # 取出這個帳號裡面有多少帳戶可以做交易,生一個DataFrame
-        acct = []
+        acctDF = pd.DataFrame()
+        
         i = 0        
-        while True:    
-            try:
-                acct.append([self.api.list_accounts()[i].account_type.value, self.api.list_accounts()[i].person_id, self.api.list_accounts()[i].account_id, self.api.list_accounts()[i].username])
+        while True:
+            l = []
+            try:                
+                l.append([self.api.list_accounts()[i].account_type.value, self.api.list_accounts()[i].person_id, self.api.list_accounts()[i].account_id, self.api.list_accounts()[i].username])
+                acctDF = acctDF.append(pd.DataFrame(l, columns = ["Type", "ID", "AccountID", "Name"]))
                 i += 1
             except:
                 break
-        acctDF = pd.DataFrame(acct, columns = ["Type", "ID", "AccountID", "Name"])     
+        # acctDF = pd.DataFrame(acct, columns = ["Type", "ID", "AccountID", "Name"])
+        acctDF.reset_index(drop = True, inplace = True)   
         # 取得帳戶的Index,後面可以設交易帳戶
-        acct_idx = acctDF.index[(acctDF.Type == tread_type) & (acctDF.AccountID == acctid)].values[0]
+        acct_idx = acctDF.index[(acctDF.Type == trade_type) & (acctDF.AccountID == acctID)].values[0]
         # 設定預設交易帳戶
         self.api.set_default_account(self.api.list_accounts()[int(acct_idx)])
         # 取得身份證字號,然後把憑證餵進去
-        self.ca_userid = acctDF.ID[(acctDF.Type == tread_type) & (acctDF.AccountID == acctid)].values[0]
-        uname = acctDF.Name[(acctDF.Type == tread_type) & (acctDF.AccountID == acctid)].values[0].strip()
-
-        i_ca = self.InsertCAFile()
-
-        if i_ca:
-            return print(f"啟用及匯入憑證成功![目前使用 {uname}({self.ca_userid})憑證]")
-        else:
-            return print(f"匯入憑證失敗,請檢查File Status!")
+        self.ca_userID = acctDF.ID[(acctDF.Type == trade_type) & (acctDF.AccountID == acctID)].values[0]
+        self.ca_cuname = acctDF.Name[(acctDF.Type == trade_type) & (acctDF.AccountID == acctID)].values[0].strip()
     
     def InsertCAFile(self):
-        pwdDict = cfg(self.ca_mapping).getValueByConfigFile(key = self.ca_passwd) 
-        pwd = pwdDict.get(self.ca_userid) # pwdDict[self.ca_userid]
-        cafile = cfg(self.ca_mapping).getValueByConfigFile(key = self.ca_path).replace("<ID>", self.ca_userid)
+        pwdDict = cfg(self.acct_file).getValueByConfigFile(key = self.key_capwd) 
+        pwd = pwdDict.get(self.ca_userID) # 另一種寫法:pwdDict[self.ca_userid]
+        cafile = cfg(self.acct_file).getValueByConfigFile(key = self.key_capath).replace("<ID>", self.ca_userID)
         remsg = self.api.activate_ca(
                                     # ca_path = fr"D:\MyDocument\OneDrive\ekey\551\{self.ca_userid}\S\Sinopac.pfx",
                                     ca_path = cafile,
                                     ca_passwd = pwd,
-                                    person_id = self.ca_userid
+                                    person_id = self.ca_userID
                                 )
-        return remsg
+        if remsg:
+            print(f"啟用及匯入憑證成功![目前使用 {self.ca_cuname}({self.ca_userID})憑證]")
+        else:
+            print(f"匯入憑證失敗,請檢查File Status!")
 
-    def ChangeTreadAccount(self, ca_acct = None):
+    def ChangeTradeCA(self, ca = None):
         if self.api == None:
             return print("請指定API")
         
-        if ca_acct:
-            self.ca_acct = ca_acct
+        if ca:
+            self.ca_acct = ca
         else:
             return print("請指定要更換的使用者")
         
         print("更換交易帳號中...請稍等.....")
         self.SetTreadAccount()
+        self.InsertCAFile()
 
-    def getContractForAPI(self, focus_DF):
+    def getContractForAPI(self, focus_DF: pd.DataFrame):
         if self.api == None:
             return print("請指定API")
 
@@ -176,16 +165,21 @@ class connect:
         except Exception as exc:
             return print(exc)
 
-    def getAfterOpenTimesSnapshotData(self, contract, nmin_run:int = 0):
-        self.start_time = (datetime.strptime(self.start_time, "%H:%M:%S") + timedelta(minutes = nmin_run)).strftime("%H:%M:%S")
+    def getTreasuryStockDF(self, exclude:list = [])->pd.DataFrame:
+        whDF = pd.DataFrame(self.api.list_positions(self.api.stock_account))
+        if exclude != []:
+            whDF = whDF[~whDF.code.isin(exclude)]
+        return whDF
 
+    def getOpeningSnapshotData(self, contract:list, nmin_run:int = 0)->pd.DataFrame:
         # 這段是防止開盤後run時跑去等開盤時間
         if simulation().checkSimulationTime():
             outDF = self.getMinSnapshotData(contract)
             return outDF
-
+        # 計算指定開盤後的時間,並取得該時間的snapshot
+        self.opening = (datetime.strptime(self.opening, "%H:%M") + timedelta(minutes = nmin_run)).strftime("%H:%M")
         while True:    
-            if datetime.now().strftime("%H:%M:%S") == self.start_time:
+            if datetime.now().strftime("%H:%M") == self.opening:
                 outDF = self.getMinSnapshotData(contract)
                 break
         return outDF 
@@ -256,10 +250,10 @@ class connect:
                              )
         self.api.place_order(Ctract, order)
 
-    def StockCancelOrder(self, stkid:str = "all"):
+    def StockCancelOrder(self, stkid:str = "all", gfile:bool = False):
         data = []
-        # 先更新一下
-        self.api.update_status(self.api.stock_account)
+        # # 先更新一下
+        # self.api.update_status(self.api.stock_account)
         for i in range(0, len(self.api.list_trades())):
             if self.api.list_trades()[i].status.status.value != "Cancelled" and self.api.list_trades()[i].status.status.value != "Filled":
                 # <-log用        
@@ -281,7 +275,7 @@ class connect:
                 except:
                     continue
         # <-log用        
-        if data != []:
+        if data != [] and gfile:
             DF = pd.DataFrame(data, columns = ["StockID", "Status", "Time"])
             path = "./data/ActuralTrade/" + datetime.now().strftime("%Y%m")
             ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -343,20 +337,8 @@ class connect:
     def UnsubscribeTick(self, contract):
         self.api.quote.unsubscribe(contract, quote_type=sj.constant.QuoteType.Tick)
 
-    # def getMinsSnapshotData(self, contract = None, times: int = 10, usecs:int = 60):
-    #     self.start_time = (datetime.strptime(self.start_time, "%H:%M:%S") + timedelta(minutes = times)).strftime("%H:%M:%S")
-    #     outDF = pd.DataFrame()
-    #     # 收盤後只要取一次就好
-    #     if simulation().checkSimulationTime():
-    #         outDF = self.getMinSnapshotData(contract)
-    #         return outDF
-        
-    #     while True:
-    #         outDF = outDF.append(self.getMinSnapshotData(contract))            
-    #         if datetime.now().strftime("%H:%M:%S") == self.start_time:
-    #             break
-    #         tool.WaitingTimeDecide(usecs)
-  
+
+
 class db:
     def __init__(self):
         self.tb_name = None
@@ -573,8 +555,12 @@ class strategy:
         self.in_DF = DF
         self.in_DFchangename = DF.rename(columns = {"投信(股數)": "Credit"})
         self.out_DF = pd.DataFrame()
-        self.rows = int(round(DF.StockID.count() * 0.1, 0)) # 前10%的交易量
         self.method = 0
+        try:
+            self.rows = int(round(DF.StockID.count() * 0.1, 0)) # 前10%的交易量
+        except:
+            pass
+       
 
     def SMA_Volume(self):
         out_DF =  self.in_DF.loc[(self.in_DF.sgl_SMA > 0) & (self.in_DF.Volume >= 5000)]
@@ -631,6 +617,7 @@ class strategy:
         MergeDF.loc[(MergeDF["snapClose"] < MergeDF["Close"] * 1.05), "BuyFlag"] = "X"
         BuyDF = MergeDF.loc[MergeDF.BuyFlag == "X"]
         return BuyDF.drop(columns = ["BuyFlag", "High", "snapClose", "Close"])
+        
     # 買進策略:a.5min價 < 前一交易收盤價+5% b.5min價 >= 開盤價(紅K) c.5min價>= 最高價*(1 - 0.01)
     def BuyStrategyFromOpenSnapDF_02(self, snap_DF: pd.DataFrame)->pd.DataFrame:
         MergeDF = self.in_DF.filter(items = ["StockID", "StockName", "上市/上櫃", "Close"]).merge(snap_DF.filter(items = ["StockID", "Open", "High", "Close"]).rename(columns = {"Close": "snapClose"}), on = ["StockID"], how = "left")
@@ -646,6 +633,40 @@ class strategy:
         if snap_DF != []:
             file.GeneratorFromDF(snap_DF, f"./data/ActuralTrade/snap_{ymd}.xlsx")
 
+    def genBuyWithSellPriceDF(self, gfile:bool = False)->pd.DataFrame:
+        if not self.in_DF.empty:
+           for idx, row in self.in_DF.iterrows():
+                l = []
+                l.append(row.code)
+                l.append(row.price)
+                l.append(round(row.price * 1.01, 1))
+                l.append(round(row.price * (1 - 0.02), 1))
+                self.out_DF = self.out_DF.append(pd.DataFrame([l], columns = ["StockID", "Buy", "UP", "DOWN"]))
+
+        if gfile and self.out_DF.empty == False:
+            ymdt = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file.GeneratorFromDF(self.out_DF, f"./data/ActuralTrade/BuyData_{ymdt}.xlsx")
+        return self.out_DF
+
+    def rebuildBuyWithSellPriceDF(self, org_DF:pd.DataFrame , gfile:bool = False):
+        orgsell_list = tool.DFcolumnToList(org_DF, "StockID")
+        self.out_DF = org_DF.copy()
+        stop_chk_T = False
+        if self.in_DF.empty:
+            stop_chk_T = True
+            self.out_DF = org_DF.drop(org_DF.index, inplace=True)
+        else:
+            newsell_list = tool.DFcolumnToList(self.in_DF, "code")
+            if orgsell_list != newsell_list:
+                # 只留下新的賣出清單
+                self.out_DF = org_DF[org_DF.StockID.isin(newsell_list)]
+                if gfile:
+                    ymdt = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    file.GeneratorFromDF(self.out_DF, f"./data/ActuralTrade/BuyData_{ymdt}.xlsx")
+        
+        return stop_chk_T, self.out_DF
+
+        
 class indicator:
     def __init__(self, inDF):
         self.DF = inDF         
@@ -831,6 +852,8 @@ class indicator:
         return self.DF
 
 class tool:
+    def __init__(self) -> None:
+        self.pathlst = ["ActuralTrade", "Trade", "DailyAnalysis", "Simulation"]
 
     def DFcolumnToList(inDF: pd.DataFrame, colname:str):
         col_list = []
@@ -855,15 +878,21 @@ class tool:
             step = int((datetime.strptime(etime, "%H:%M:%S") - datetime.strptime(stime, "%H:%M:%S")).seconds / feq )        
         return step
 
-    def checkPathExist(c_path:str, build:bool = True)->bool:
+    def checkPathExist(c_path:str, build:bool = True):
         if build:
             if not os.path.exists(c_path):    
                 os.makedirs(c_path)
-                return True
-        return os.path.exists(c_path)
 
     def checkFileExist(fname:str)->bool:
         return os.path.isfile(fname)
+
+    def checkCreateYearMonthPath():
+        pathlst = ["ActuralTrade", "Trade", "DailyAnalysis"]
+        ym = datetime.now().strftime("%Y%m")
+        for p in pathlst:
+            path = f"./data/<folder>/{ym}"
+            path = path.replace("<folder>", p)
+            tool.checkPathExist(path)
 
 class craw:
     def __init__(self):
