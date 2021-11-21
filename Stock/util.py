@@ -60,10 +60,6 @@ class connect:
         
         self.opening = "09:00"
 
-
-
-        self.start_time = "09:00:00"
-        self.end_time = "13:30:00"
         self.startdate = datetime.today().strftime("%Y-%m-%d")
         self.enddate = datetime.today().strftime("%Y-%m-%d")
         self.markets = ["TSE", "OTC"]
@@ -336,8 +332,6 @@ class connect:
 
     def UnsubscribeTick(self, contract):
         self.api.quote.unsubscribe(contract, quote_type=sj.constant.QuoteType.Tick)
-
-
 
 class db:
     def __init__(self):
@@ -665,7 +659,6 @@ class strategy:
                     file.GeneratorFromDF(self.out_DF, f"./data/ActuralTrade/BuyData_{ymdt}.xlsx")
         
         return stop_chk_T, self.out_DF
-
         
 class indicator:
     def __init__(self, inDF):
