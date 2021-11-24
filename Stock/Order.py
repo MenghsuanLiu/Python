@@ -5,7 +5,8 @@ import sys
 import time
 from shioaji import constant
 from datetime import datetime, timedelta
-from util import connect as con, file, strategy as stg, tool
+from util.util import connect as con, file, strategy as stg, tool
+from util.Logger import create_logger
 
 itemorder = []
 itemdeal = []
@@ -13,10 +14,10 @@ GorderDF = pd.DataFrame()
 GdealDF = pd.DataFrame()
 BuyDF = pd.DataFrame()
 whDF = pd.DataFrame()
+eventDF = pd.DataFrame()
 def placeOrderCallBack(order_state: constant.OrderState, order: dict):
     # # 用global才可以告訴function要修改的是全域變數
-    # global orderDF, dealDF
-
+    # global itemorder, itemdeal
     if order_state == constant.OrderState.TFTOrder: 
         l = []
         l.append(order["contract"]["code"])
@@ -30,11 +31,10 @@ def placeOrderCallBack(order_state: constant.OrderState, order: dict):
         l.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%H:%M:%S"))
         l.append(datetime.now().strftime("%H:%M:%S.%f"))
         itemorder.append(l)
-        
-
-    if order_state == constant.OrderState.TFTDeal:
+    elif order_state == "TFTDEAL":
+    # elif order_state == constant.OrderState.TFTDeal:
+    # if order_state == constant.OrderState.TFTDeal:
         dl = []
-        # col = ["StockID", "Action", "Price", "Qty", "TradeDate", "TradeTime"]
         dl.append(order["code"])
         dl.append(order["action"]["value"])
         dl.append(order["price"])
@@ -106,12 +106,29 @@ def callbackListDataToDF():
         fpath = f"./data/ActuralTrade/deal_{ymdt}.xlsx"
         file.GeneratorFromDF(dDF, fpath)
 
+
+# logger = create_logger("./logs")
+# logger.info("Start")
 # 先檢查資料夾是否存在..沒有就建立
 tool.checkCreateYearMonthPath()
 
 check_secs = 30
 # 1.連接Server,指定帳號(預設chris),使用的CA(預設None)
 api = con().ServerConnectLogin(ca = "chris")
+
+
+@api.quote.on_event
+def event_callback(resp_code: int, event_code: int, info: str, event: str):
+    global eventDF
+    l = []
+    l.append(resp_code)
+    l.append(event_code)
+    l.append(info)
+    l.append(event)
+    l.append(datetime.now().strftime("%H:%M:%S.%f"))
+    eventDF = eventDF.append(pd.DataFrame([l], columns = ["resp_code", "event_code", "info", "event", "ReceiveTime"]))
+    # print(f'Event code: {event_code} | Event: {event} | Resp_Code: {resp_code} | info: {info}')
+
 # api = con().ServerConnectLogin(simulte = True)
 # 註:更換另一個帳號
 # con(api).ChangeTradeCA(ca = "lydia")
@@ -121,7 +138,8 @@ api.set_order_callback(placeOrderCallBack)
 
 # 3.取得現有庫存
 whList = tool.DFcolumnToList(con(api).getTreasuryStockDF(), "code")
-whList = ["00885", "1301", "1904", "2002", "2330", "2353", "2616", "2705", "2823", "2883", "3186", "3258", "3704"]
+# whList = ["00885", "1301", "1904", "2002", "2330", "2353", "2616", "2705", "2823", "2883", "3186", "3258", "3704"]
+
 
 # 4.依策略決定下單清單
 stkDF = file().getLastFocusStockDF()
@@ -150,7 +168,12 @@ BuyList = tool.DFcolumnToList(stgBuyDF, "StockID")
 # 7.選一筆<=40做漲停板(買的到),其他的部份跌停板(買不到)
 excludeID = tool.DFcolumnToList(pd.read_excel("./data/Exclude.xlsx"), "StockID")
 stgBuyDF = stgBuyDF[~stgBuyDF.StockID.isin(excludeID)]
-chooseID = random.sample(tool.DFcolumnToList(stgBuyDF.loc[stgBuyDF.Open <= 40], "StockID"), k = 1)
+chooseID = []
+for i in range(2, 0, -1):
+    try:
+        chooseID = random.sample(tool.DFcolumnToList(stgBuyDF.loc[stgBuyDF.Open <= 50], "StockID"), k = i)
+    except:
+        continue
 
 for id in BuyList:
     if id in chooseID:
@@ -179,14 +202,15 @@ if not GdealDF.empty:
 
 # 9.由庫存中找出己成交的股票
 newBuyDF = con(api).getTreasuryStockDF(exclude = whList)
+
 # 產生要賣的DF("StockID", "Buy", "UP", "DOWN")
 BuyDF = stg(newBuyDF).genBuyWithSellPriceDF(gfile = True)
 
 # BuyDF = getNewBuyDFforGetDealOrder(api, BuyList)...這由Deal產生...要再研究
 
-canceltime = "10:" + str(random.choice(range(10, 60)))
+canceltime = "10:" + str(random.choice(range(10, 30)))
 
-stopget = False
+# stopget = False
 while True:
     callbackListDataToDF()
     # 取得現行報價
@@ -198,9 +222,10 @@ while True:
         for id in cancellist:
             con(api).StockCancelOrder(id)
     # 當stopget==True時,就不跑下面的程式
-    if not stopget:
-        newBuyDF = con(api).getTreasuryStockDF(exclude = whList)
-        stopget, BuyDF = stg(newBuyDF).rebuildBuyWithSellPriceDF(BuyDF, gfile = True)
+    # if not stopget:
+    newBuyDF = con(api).getTreasuryStockDF(exclude = whList)
+    BuyDF = stg(newBuyDF).rebuildBuyWithSellPriceDF(BuyDF, gfile = True)
+    # stopget, BuyDF = stg(newBuyDF).rebuildBuyWithSellPriceDF(BuyDF, gfile = True)
 
     # 不是空值才需要往下檢查是否要賣出
     if not BuyDF.empty:
@@ -226,14 +251,16 @@ while True:
 
 
 ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
-path = "./data/ActuralTrade"
+path = f"./data/ActuralTrade/{ymd[0:6]}"
 if not GorderDF.empty:
     fpath = f"{path}/order_{ymd}.xlsx"
     file.GeneratorFromDF(GorderDF, fpath)
 if not GdealDF.empty:
     fpath = f"{path}/deal_{ymd}.xlsx"
     file.GeneratorFromDF(GdealDF, fpath)
-
+if not eventDF.empty:
+    fpath = f"{path}/event_{ymd}.xlsx"
+    file.GeneratorFromDF(eventDF, fpath)
 
 
 

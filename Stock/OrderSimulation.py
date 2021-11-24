@@ -2,7 +2,7 @@
 import pandas as pd
 import time
 from datetime import date, datetime, timedelta
-from util import connect as con, cfg, file, strategy as stg, tool, db, indicator as ind, simulation as sim
+from util.util import connect as con, cfg, file, strategy as stg, tool, db, indicator as ind, simulation as sim
 
 def checkPriceToSell(invDF, min_data, last_flg):
     # 有庫存真實資料要換掉

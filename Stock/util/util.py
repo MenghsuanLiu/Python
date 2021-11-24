@@ -249,7 +249,7 @@ class connect:
     def StockCancelOrder(self, stkid:str = "all", gfile:bool = False):
         data = []
         # # 先更新一下
-        # self.api.update_status(self.api.stock_account)
+        self.api.update_status(self.api.stock_account)
         for i in range(0, len(self.api.list_trades())):
             if self.api.list_trades()[i].status.status.value != "Cancelled" and self.api.list_trades()[i].status.status.value != "Filled":
                 # <-log用        
@@ -328,10 +328,11 @@ class connect:
         pass
 
     def SubscribeTick(self, contract):
-        self.api.quote.subscribe(contract, quote_type = sj.constant.QuoteType.Tick)
+        # https://sinotrade.github.io/tutor/market_data/streaming/futures/
+        self.api.quote.subscribe(contract, quote_type = "tick", version = "v1")
 
     def UnsubscribeTick(self, contract):
-        self.api.quote.unsubscribe(contract, quote_type=sj.constant.QuoteType.Tick)
+        self.api.quote.unsubscribe(contract, quote_type = "tick")
 
 class db:
     def __init__(self):
@@ -643,12 +644,14 @@ class strategy:
         return self.out_DF
 
     def rebuildBuyWithSellPriceDF(self, org_DF:pd.DataFrame , gfile:bool = False):
+        
         orgsell_list = tool.DFcolumnToList(org_DF, "StockID")
         self.out_DF = org_DF.copy()
-        stop_chk_T = False
+        # stop_chk_T = False
         if self.in_DF.empty:
-            stop_chk_T = True
-            self.out_DF = org_DF.drop(org_DF.index, inplace=True)
+        #    stop_chk_T = True
+            # inplace = False(會是empty), True(會是None Type)
+            self.out_DF = org_DF.drop(org_DF.index, inplace = False)
         else:
             newsell_list = tool.DFcolumnToList(self.in_DF, "code")
             if orgsell_list != newsell_list:
@@ -658,7 +661,8 @@ class strategy:
                     ymdt = datetime.now().strftime("%Y%m%d_%H%M%S")
                     file.GeneratorFromDF(self.out_DF, f"./data/ActuralTrade/BuyData_{ymdt}.xlsx")
         
-        return stop_chk_T, self.out_DF
+        # return stop_chk_T, self.out_DF
+        return self.out_DF
         
 class indicator:
     def __init__(self, inDF):
