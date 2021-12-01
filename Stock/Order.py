@@ -3,10 +3,12 @@ import pandas as pd
 import random
 import sys
 import time
+import os
 from shioaji import constant
 from datetime import datetime, timedelta
 from util.util import connect as con, file, strategy as stg, tool
 from util.Logger import create_logger
+
 
 itemorder = []
 itemdeal = []
@@ -15,9 +17,7 @@ GdealDF = pd.DataFrame()
 BuyDF = pd.DataFrame()
 whDF = pd.DataFrame()
 eventDF = pd.DataFrame()
-def placeOrderCallBack(order_state: constant.OrderState, order: dict):
-    # # 用global才可以告訴function要修改的是全域變數
-    # global itemorder, itemdeal
+def placeOrderCallBack(order_state: constant.OrderState, order: dict): 
     if order_state == constant.OrderState.TFTOrder: 
         l = []
         l.append(order["contract"]["code"])
@@ -31,8 +31,8 @@ def placeOrderCallBack(order_state: constant.OrderState, order: dict):
         l.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%H:%M:%S"))
         l.append(datetime.now().strftime("%H:%M:%S.%f"))
         itemorder.append(l)
-    elif order_state == "TFTDEAL":
-    # elif order_state == constant.OrderState.TFTDeal:
+    # elif order_state == "TFTDEAL":
+    elif order_state == constant.OrderState.TFTDeal:
     # if order_state == constant.OrderState.TFTDeal:
         dl = []
         dl.append(order["code"])
@@ -106,9 +106,18 @@ def callbackListDataToDF():
         fpath = f"./data/ActuralTrade/deal_{ymdt}.xlsx"
         file.GeneratorFromDF(dDF, fpath)
 
+def buyStocksGenerate(maxNum):
+    while maxNum > 0:
+        yield maxNum
+        maxNum -= 1
 
-# logger = create_logger("./logs")
-# logger.info("Start")
+pid = os.getpid() 
+
+
+logger = create_logger("./logs")
+logger.info(f"Start PID = {pid}")
+
+
 # 先檢查資料夾是否存在..沒有就建立
 tool.checkCreateYearMonthPath()
 
@@ -144,8 +153,7 @@ whList = tool.DFcolumnToList(con(api).getTreasuryStockDF(), "code")
 # 4.依策略決定下單清單
 stkDF = file().getLastFocusStockDF()
 stkDF = stg(stkDF).getFromFocusOnByStrategy()
-
-# 5.組合需要抓價量的Stocks
+# 5.組合需要抓價量的Stocks(不能當沖的不放進來)
 contracts = con(api).getContractForAPI(stkDF)
 
 # 5.取得開盤後5min的OHLC的值(測試時會自動立即run)
@@ -169,17 +177,21 @@ BuyList = tool.DFcolumnToList(stgBuyDF, "StockID")
 excludeID = tool.DFcolumnToList(pd.read_excel("./data/Exclude.xlsx"), "StockID")
 stgBuyDF = stgBuyDF[~stgBuyDF.StockID.isin(excludeID)]
 chooseID = []
-for i in range(2, 0, -1):
+BuyDecide = buyStocksGenerate(2)
+for i in BuyDecide:
     try:
-        chooseID = random.sample(tool.DFcolumnToList(stgBuyDF.loc[stgBuyDF.Open <= 50], "StockID"), k = i)
+        chooseID = random.sample(tool.DFcolumnToList(stgBuyDF.loc[stgBuyDF.Open <= 60], "StockID"), k = i)
+        break
     except:
         continue
 
 for id in BuyList:
     if id in chooseID:
         con(api).StockNormalBuySell(stkid = id, price = "up", qty = 1, action = "Buy")
+        logger.info(f"Buy {id}(漲停)")
         continue
     con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Buy")
+    logger.info(f"Buy {id}(跌停)")
 # 8.休息5秒,取得成交回報
 time.sleep(5)
 callbackListDataToDF()
@@ -210,15 +222,20 @@ BuyDF = stg(newBuyDF).genBuyWithSellPriceDF(gfile = True)
 
 canceltime = "10:" + str(random.choice(range(10, 30)))
 
-# stopget = False
+stopcancel = False
+loopTimes = 0
 while True:
+    loopTimes += 1
+    logger.info(f"Loop Times: {loopTimes}")
     callbackListDataToDF()
     # 取得現行報價
     SnapShot = con(api).getMinSnapshotData(contracts)
 
-    if datetime.now().strftime("%H:%M") == canceltime:
+    if datetime.now().strftime("%H:%M") == canceltime and not stopcancel:
         # 有買的就不cancel
+        stopcancel = True
         cancellist = tool.DFcolumnToList(stgBuyDF[~stgBuyDF.StockID.isin(chooseID)], "StockID")
+        logger.info(f"cancel list: {cancellist}")
         for id in cancellist:
             con(api).StockCancelOrder(id)
     # 當stopget==True時,就不跑下面的程式
@@ -234,6 +251,7 @@ while True:
             nowprice = SnapShot[SnapShot.StockID == row.StockID].Close.values[0]
             if nowprice >= row.UP or nowprice <= row.DOWN:
                 con(api).StockNormalBuySell(stkid = str(row.StockID), price = "down", qty = 1, action = "Sell")
+                logger.info(f"Sell {row.StockID}")
                 continue
 
         # # 收盤前5mins要清倉(Sell + 跌停價)
@@ -241,6 +259,7 @@ while True:
             SellList = tool.DFcolumnToList(BuyDF, "StockID")
             for id in SellList:
                 con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Sell")
+                logger.info(f"Sell {row.StockID}")
             break
 
     if datetime.now().strftime("%H:%M") >= "13:25":
@@ -255,14 +274,17 @@ path = f"./data/ActuralTrade/{ymd[0:6]}"
 if not GorderDF.empty:
     fpath = f"{path}/order_{ymd}.xlsx"
     file.GeneratorFromDF(GorderDF, fpath)
+    logger.info(f"Generate Order File Down!")
 if not GdealDF.empty:
     fpath = f"{path}/deal_{ymd}.xlsx"
     file.GeneratorFromDF(GdealDF, fpath)
+    logger.info(f"Generate Deal File Down!")
 if not eventDF.empty:
     fpath = f"{path}/event_{ymd}.xlsx"
     file.GeneratorFromDF(eventDF, fpath)
+    logger.info(f"Generate Event File Down!")
 
-
+logger.info("End")
 
 
 

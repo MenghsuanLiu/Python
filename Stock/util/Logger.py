@@ -4,7 +4,8 @@ from datetime import datetime
 
 
 # dir_path = 'logs/'   # 設定 logs 目錄
-filename = "{:%Y%m%d_%H%M}".format(datetime.now()) + '.log'     
+# filename = "{:%Y%m%d_%H%M}".format(datetime.now()) + '.log'     
+filename = "{:%Y%m%d}".format(datetime.now()) + "_Order.log"     
 # 設定檔名
 
 def create_logger(log_folder):

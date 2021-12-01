@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup as bs
 from datetime import datetime, date, timedelta
 
 
+
 class cfg:
     def __init__(self, cfg: str = None)->None:
         self.cfg_file = "./config/config.json"
@@ -84,6 +85,7 @@ class connect:
         
         try:
             self.api.login(person_id = self.id, passwd = self.pwd, contracts_timeout = 0)
+            
             print(f"Login {env_name} Environment Success!!({self.id})")
             if env_name == "Actural" and ca:
                 self.ca_acct = ca
@@ -156,7 +158,9 @@ class connect:
             Lst = tool.DFcolumnToList(focus_DF, "StockID")
             ct_lst = []
             for stkid in Lst:
-                ct_lst.append(self.api.Contracts.Stocks[stkid])
+                # 只有可以當沖的才要留著
+                if self.api.Contracts.Stocks[stkid].day_trade.value == "Yes":
+                    ct_lst.append(self.api.Contracts.Stocks[stkid])
             return ct_lst
         except Exception as exc:
             return print(exc)
