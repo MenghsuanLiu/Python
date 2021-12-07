@@ -1,10 +1,18 @@
 # %%
+
+# 1.placeOrderCallBack deal的action不加["value"]
+# 2.placeOrderCallBack deal中把logger放到l append完後
+# 3.加入api.quote.on_quote
+# 4.09:05的while loop把logger的部份拉掉
+
+
+
 import pandas as pd
 import random
 import sys
 import time
 import os
-from shioaji import constant
+import shioaji as sj
 from datetime import datetime, timedelta
 from util.util import connect as con, file, strategy as stg, tool
 from util.Logger import create_logger
@@ -17,33 +25,33 @@ GdealDF = pd.DataFrame()
 BuyDF = pd.DataFrame()
 whDF = pd.DataFrame()
 eventDF = pd.DataFrame()
-def placeOrderCallBack(order_state: constant.OrderState, order: dict): 
-    if order_state == constant.OrderState.TFTOrder: 
+def placeOrderCallBack(state: sj.constant.OrderState, msg: dict): 
+    if state == sj.constant.OrderState.TFTDeal:
         l = []
-        l.append(order["contract"]["code"])
-        l.append(order["order"]["action"])
-        l.append(order["order"]["price"])
-        l.append(order["order"]["quantity"])
-        l.append(order["order"]["order_type"])
-        l.append(order["order"]["price_type"])
-        l.append(order["status"]["cancel_quantity"])
-        l.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%Y%m%d"))
-        l.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%H:%M:%S"))
+        l.append(msg["code"])
+        l.append(msg["action"])
+        l.append(msg["price"])
+        l.append(msg["quantity"])
+        l.append(datetime.fromtimestamp(msg["ts"]).strftime("%Y%m%d"))
+        l.append(datetime.fromtimestamp(msg["ts"]).strftime("%H:%M:%S"))
+        l.append(datetime.now().strftime("%H:%M:%S.%f"))
+        logger.info(f"get dealData: {msg}")
+        itemdeal.append(l)
+    elif state == sj.constant.OrderState.TFTOrder:
+        # logger.info(f"get orderData: {msg}")
+        l = []
+        l.append(msg["contract"]["code"])
+        l.append(msg["order"]["action"])
+        l.append(msg["order"]["price"])
+        l.append(msg["order"]["quantity"])
+        l.append(msg["order"]["order_type"])
+        l.append(msg["order"]["price_type"])
+        l.append(msg["status"]["cancel_quantity"])
+        l.append(datetime.fromtimestamp(int(msg["status"]["exchange_ts"])).strftime("%Y%m%d"))
+        l.append(datetime.fromtimestamp(int(msg["status"]["exchange_ts"])).strftime("%H:%M:%S"))
         l.append(datetime.now().strftime("%H:%M:%S.%f"))
         itemorder.append(l)
-    # elif order_state == "TFTDEAL":
-    elif order_state == constant.OrderState.TFTDeal:
-    # if order_state == constant.OrderState.TFTDeal:
-        dl = []
-        dl.append(order["code"])
-        dl.append(order["action"]["value"])
-        dl.append(order["price"])
-        dl.append(order["quantity"])
-        dl.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%Y%m%d"))
-        dl.append(datetime.fromtimestamp(int(order["status"]["exchange_ts"])).strftime("%H:%M:%S"))
-        dl.append(datetime.now().strftime("%H:%M:%S.%f"))
-        itemdeal.append(dl)
-
+    
 def getNewBuyDFforGetDealOrder(api_in, buylist:list):
     outBuyDF = pd.DataFrame()
     outbuylist = []
@@ -111,6 +119,7 @@ def buyStocksGenerate(maxNum):
         yield maxNum
         maxNum -= 1
 
+
 pid = os.getpid() 
 
 
@@ -125,18 +134,21 @@ check_secs = 30
 # 1.連接Server,指定帳號(預設chris),使用的CA(預設None)
 api = con().ServerConnectLogin(ca = "chris")
 
+@api.quote.on_quote
+def quote_callback(topic: str, quote: dict):
+    logger.info(f"Topic: {topic}, Quote: {quote}")
 
-@api.quote.on_event
-def event_callback(resp_code: int, event_code: int, info: str, event: str):
-    global eventDF
-    l = []
-    l.append(resp_code)
-    l.append(event_code)
-    l.append(info)
-    l.append(event)
-    l.append(datetime.now().strftime("%H:%M:%S.%f"))
-    eventDF = eventDF.append(pd.DataFrame([l], columns = ["resp_code", "event_code", "info", "event", "ReceiveTime"]))
-    # print(f'Event code: {event_code} | Event: {event} | Resp_Code: {resp_code} | info: {info}')
+# @api.quote.on_event
+# def event_callback(resp_code: int, event_code: int, info: str, event: str):
+#     global eventDF
+#     l = []
+#     l.append(resp_code)
+#     l.append(event_code)
+#     l.append(info)
+#     l.append(event)
+#     l.append(datetime.now().strftime("%H:%M:%S.%f"))
+#     eventDF = eventDF.append(pd.DataFrame([l], columns = ["resp_code", "event_code", "info", "event", "ReceiveTime"]))
+#     # print(f'Event code: {event_code} | Event: {event} | Resp_Code: {resp_code} | info: {info}')
 
 # api = con().ServerConnectLogin(simulte = True)
 # 註:更換另一個帳號
@@ -188,6 +200,10 @@ for i in BuyDecide:
 for id in BuyList:
     if id in chooseID:
         con(api).StockNormalBuySell(stkid = id, price = "up", qty = 1, action = "Buy")
+        try:
+            api.quote.subscribe(api.Contracts.Stocks[id], quote_type = "tick", version = "v1")
+        except:
+            pass
         logger.info(f"Buy {id}(漲停)")
         continue
     con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Buy")
@@ -200,6 +216,7 @@ tool.WaitingTimeDecide(check_secs)
 
 # 處理成交的部份
 if not GdealDF.empty:
+    dDF = pd.DataFrame()
     for idx, row in GdealDF.iterrows():       
         if row.Action == "Buy":
             l = []
@@ -207,10 +224,8 @@ if not GdealDF.empty:
             l.append(row.Price)
             l.append(round(row.Price * 1.01, 1))
             l.append(round(row.Price * (1 - 0.02), 1))
-            BuyDF = BuyDF.append(pd.DataFrame([l], columns = ["StockID", "Buy", "UP", "DOWN"]))
-
-    bkBuyDF = BuyDF.copy(deep = True)   # deep = True, copy才不會被改變原來的BuyDF
-    file.GeneratorFromDF(BuyDF, "./data/ActuralTrade/Dealbuy.xlsx")
+            dDF = dDF.append(pd.DataFrame([l], columns = ["StockID", "Buy", "UP", "DOWN"]))
+    file.GeneratorFromDF(dDF, "./data/ActuralTrade/Dealbuy.xlsx")
 
 # 9.由庫存中找出己成交的股票
 newBuyDF = con(api).getTreasuryStockDF(exclude = whList)
@@ -223,10 +238,7 @@ BuyDF = stg(newBuyDF).genBuyWithSellPriceDF(gfile = True)
 canceltime = "10:" + str(random.choice(range(10, 30)))
 
 stopcancel = False
-loopTimes = 0
 while True:
-    loopTimes += 1
-    logger.info(f"Loop Times: {loopTimes}")
     callbackListDataToDF()
     # 取得現行報價
     SnapShot = con(api).getMinSnapshotData(contracts)
@@ -267,6 +279,11 @@ while True:
 
     tool.WaitingTimeDecide(check_secs)
 
+if id in chooseID:
+    try:
+        api.quote.unsubscribe(api.Contracts.Stocks[id], quote_type = "tick")
+    except:
+        pass
 
 
 ymd = datetime.now().strftime("%Y%m%d_%H%M%S")

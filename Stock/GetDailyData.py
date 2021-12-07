@@ -74,7 +74,7 @@ def writeDailyKbarDataToDB(StkDF: pd.DataFrame):
         tb = cfg().getValueByConfigFile(key = "tb_daily")
         db().updateDFtoDB(DkBarDF, tb_name = tb)
     
-def writeLegalPersonDailyVolumeDB(stkBsData: pd.DataFrame = None):
+def writeLegalPersonDailyVolumeDB(stkBsData: pd.DataFrame):
     # 取得TabName
     tb = cfg().getValueByConfigFile(key = "tb_volume")
     sql = f"SELECT MAX(TradeDate) as TradeDate FROM {tb}"
@@ -202,7 +202,7 @@ def getStockDailyDataFromDB(stkBsData: pd.DataFrame, days:int = 250)->pd.DataFra
     df = df.merge(stkBsData, on = ["StockID"], how = "left")
     return df
 
-def mergeVolumeDataDB(in_DF: pd.DataFrame = None)->pd.DataFrame:
+def mergeVolumeDataDB(in_DF: pd.DataFrame)->pd.DataFrame:
     # 找出這次資料的最後一筆日期
     tb = cfg().getValueByConfigFile(key = "tb_volume")
     max_ymd = in_DF.TradeDate.max().strftime("%Y%m%d")
@@ -231,7 +231,7 @@ def mergeVolumeDataDB(in_DF: pd.DataFrame = None)->pd.DataFrame:
     # else:
     #     print(f"沒有取到{tb_vol}的資料!!")
 
-def getLastPeriodDF(in_DF: pd.DataFrame = None, period:int = 5)->pd.DataFrame:
+def getLastPeriodDF(in_DF: pd.DataFrame, period:int = 5)->pd.DataFrame:
     outDF = pd.DataFrame()
     outDF = in_DF.groupby("StockID").tail(period)
     return outDF
@@ -255,20 +255,38 @@ def writeResultDataToFile(fullDF: pd.DataFrame):
     stgDF = stgDF[["TradeDate", "StockID", "StockName", "上市/上櫃", "cateDesc", "Close", "Volume", "MFI", "sgl_SMA", "sgl_SAR", "sgl_MAXMIN", "sgl_BBANDS", "sgl_MACD"]].rename(columns = {"TradeDate": "Date", "上市/上櫃": "Market", "cateDesc": "Category", "sgl_SMA": "signalSMA", "sgl_SAR": "signalSAR", "sgl_MAXMIN": "signalMAXMIN", "sgl_BBANDS": "signalBBANDS", "sgl_MACD": "signalMACD"})
     db().updateDFtoDB(stgDF, tb_name = "dailybuystrategy")
 
+def writeDailyFocusStockTicks(api):
+    stkDF_new = file().getLastFocusStockDF()
+    stkDF = stg(stkDF_new).getFromFocusOnByStrategy()
+    BuyList = tool.DFcolumnToList(stkDF, "StockID")
+    tickDF = pd.DataFrame()
+
+    for id in BuyList:
+        tk = api.ticks(contract = api.Contracts.Stocks[id], date = date.today().strftime("%Y-%m-%d"))
+        tDF = pd.DataFrame({**tk})
+        tDF.ts = pd.to_datetime(tDF.ts)
+        tDF.insert(0, "StockID", id)
+        tickDF = tickDF.append(tDF)
+    tickDF = tickDF.filter(items = ["StockID", "ts", "close", "volume", "bid_price", "bid_volume", "ask_price", "ask_volume"]).rename(columns = {"ts": "TradeDateTime", "close": "Close", "volume": "Volume", "bid_price": "BidPrice", "bid_volume": "BidVolume", "ask_price": "AskPrice", "ask_volume": "AskVolume"})
+    db().updateDFtoDB(tickDF, tb_name = "dailyticks")
+
+
 # 先檢查資料夾是否存在..沒有就建立
 tool.checkCreateYearMonthPath()
 
 api = con().ServerConnectLogin( user = "lydia")
 
 BsData = con(api).getStockDataByCondition()
+
+writeDailyFocusStockTicks(api)
 writeDailyMinsKbarDataToDB(api)
 writeDailyKbarDataToDB(BsData)
 writeDailyRawDataDB(api, BsData)    # 這支去補足前面漏的
 writeLegalPersonDailyVolumeDB(BsData)
 
+
 # 取得每天的成交資料(後面數字是往回抓幾天)
 stkDF = getStockDailyDataFromDB(BsData, 250)
-
 stkDFwithInd = ind(stkDF).addMAvalueToDF()  # Default ma_type = SAR, period = [5, 10, 20, 60]
 stkDFwithInd = ind(stkDFwithInd).addBBANDvalueToDF()   # Default period = 10, sigma = 2
 stkDFwithInd = ind(stkDFwithInd).addSARvalueToDF(acc = 0.02, max = 0.2)   # Default acc = 0.02, max = 0.2

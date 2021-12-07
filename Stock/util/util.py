@@ -690,12 +690,13 @@ class indicator:
             if type(self.MAperiod) is int:
                 # https://www.kite.com/python/answers/how-to-call-a-function-by-its-name-as-a-string-in-python 用字串弄成Function
                 gpDF[f"{self.MAtype}_{self.MAperiod}"] = eval("talib." + self.MAtype + "(gpDF.Close, timeperiod = self.MAperiod)")
+                gpDF[f"{self.MAtype}_{self.MAperiod}_Diff"] = gpDF[f"{self.MAtype}_{self.MAperiod}"] - gpDF[f"{self.MAtype}_{self.MAperiod}"].shift(1, axis=0)
                 outDF = outDF.append(gpDF)
                 continue
 
             for p in self.MAperiod:
                 gpDF[f"{self.MAtype}_{p}"] = eval("talib." + self.MAtype + "(gpDF.Close, timeperiod = p)")
-            
+                gpDF[f"{self.MAtype}_{p}_Diff"] = gpDF[f"{self.MAtype}_{p}"] - gpDF[f"{self.MAtype}_{p}"].shift(1, axis=0)
             outDF = outDF.append(gpDF)
         return outDF
 
@@ -810,7 +811,9 @@ class indicator:
             
             if ind.lower() == "sma":
                 self.DF.loc[(self.DF.Close > self.DF.SMA_10) & (self.DF.Close > self.DF.SMA_60), colnam] = 1
+                self.DF.loc[(self.DF.Close > self.DF.SMA_10) & (self.DF.Close > self.DF.SMA_60) & (self.DF.SMA_10_Diff > 0) & (self.DF.SMA_60_Diff > 0), colnam] = 2
                 self.DF.loc[(self.DF.Close < self.DF.SMA_10) & (self.DF.Close < self.DF.SMA_60), colnam] = -1
+                self.DF.loc[(self.DF.Close < self.DF.SMA_10) & (self.DF.Close < self.DF.SMA_60) & (self.DF.SMA_10_Diff < 0) & (self.DF.SMA_60_Diff < 0), colnam] = -2
             if ind.lower() == "sar":
                 self.addMAXMINvalueWithColumnToDF(period = [9, 26, 52], fn_col = {"MAX": "High", "MIN": "Low"})
                 self.DF["tenkan_sen_line"] = (self.DF.MAX_9 + self.DF.MIN_9) / 2
