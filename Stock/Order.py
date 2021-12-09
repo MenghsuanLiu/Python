@@ -1,11 +1,6 @@
 # %%
 
-# 1.placeOrderCallBack deal的action不加["value"]
-# 2.placeOrderCallBack deal中把logger放到l append完後
-# 3.加入api.quote.on_quote
-# 4.09:05的while loop把logger的部份拉掉
-
-
+# Tick to DF
 
 import pandas as pd
 import random
@@ -13,6 +8,7 @@ import sys
 import time
 import os
 import shioaji as sj
+from shioaji import TickSTKv1, Exchange
 from datetime import datetime, timedelta
 from util.util import connect as con, file, strategy as stg, tool
 from util.Logger import create_logger
@@ -25,6 +21,7 @@ GdealDF = pd.DataFrame()
 BuyDF = pd.DataFrame()
 whDF = pd.DataFrame()
 eventDF = pd.DataFrame()
+TickDF = pd.DataFrame()
 def placeOrderCallBack(state: sj.constant.OrderState, msg: dict): 
     if state == sj.constant.OrderState.TFTDeal:
         l = []
@@ -32,6 +29,8 @@ def placeOrderCallBack(state: sj.constant.OrderState, msg: dict):
         l.append(msg["action"])
         l.append(msg["price"])
         l.append(msg["quantity"])
+        l.append(msg["order_cond"])
+        l.append(msg["order_lot"])
         l.append(datetime.fromtimestamp(msg["ts"]).strftime("%Y%m%d"))
         l.append(datetime.fromtimestamp(msg["ts"]).strftime("%H:%M:%S"))
         l.append(datetime.now().strftime("%H:%M:%S.%f"))
@@ -106,7 +105,7 @@ def callbackListDataToDF():
         file.GeneratorFromDF(oDF, fpath)
 
     if itemdeal != []:
-        col = ["StockID", "Action", "Price", "Qty", "TradeDate", "TradeTime", "ReceiveTime"]
+        col = ["StockID", "Action", "Price", "Qty", "OrderCond", "OrderLot","TradeDate", "TradeTime", "ReceiveTime"]
         GdealDF = GdealDF.append(pd.DataFrame(itemdeal, columns = col))
         dDF = dDF.append(pd.DataFrame(itemdeal, columns = col))
         itemdeal.clear()
@@ -130,13 +129,34 @@ logger.info(f"Start PID = {pid}")
 # 先檢查資料夾是否存在..沒有就建立
 tool.checkCreateYearMonthPath()
 
-check_secs = 30
+check_secs = 20
 # 1.連接Server,指定帳號(預設chris),使用的CA(預設None)
 api = con().ServerConnectLogin(ca = "chris")
 
-@api.quote.on_quote
-def quote_callback(topic: str, quote: dict):
-    logger.info(f"Topic: {topic}, Quote: {quote}")
+@api.on_tick_stk_v1()
+def quote_callback(exchange: Exchange, tick:TickSTKv1):
+    global TickDF
+    l = []
+    l.append(tick.code)
+    l.append(tick.datetime.strftime("%H:%M:%S.%f"))
+    l.append(tick.open)
+    # l.append(tick.avg_price)
+    l.append(tick.close)
+    l.append(tick.high)
+    l.append(tick.low)
+    # l.append(tick.amount)
+    # l.append(tick.total_amount)
+    l.append(tick.volume)
+    # l.append(tick.total_volume)
+    # l.append(tick.tick_type)
+    # l.append(tick.chg_type)
+    # l.append(tick.price_chg)
+    # l.append(tick.ptc_chg)
+    # l.append(tick.bid_side_total_vol)
+    # l.append(tick.ask_side_total_vol)
+    col = ["StockID", "TradeTime", "Open", "Close", "High", "Low", "Volume"]
+    TickDF = TickDF.append(pd.DataFrame([l], columns = col))
+    # logger.info(f"Exchange: {exchange}, Tick: {tick}")
 
 # @api.quote.on_event
 # def event_callback(resp_code: int, event_code: int, info: str, event: str):
@@ -215,17 +235,17 @@ callbackListDataToDF()
 tool.WaitingTimeDecide(check_secs)
 
 # 處理成交的部份
-if not GdealDF.empty:
-    dDF = pd.DataFrame()
-    for idx, row in GdealDF.iterrows():       
-        if row.Action == "Buy":
-            l = []
-            l.append(row.StockID)
-            l.append(row.Price)
-            l.append(round(row.Price * 1.01, 1))
-            l.append(round(row.Price * (1 - 0.02), 1))
-            dDF = dDF.append(pd.DataFrame([l], columns = ["StockID", "Buy", "UP", "DOWN"]))
-    file.GeneratorFromDF(dDF, "./data/ActuralTrade/Dealbuy.xlsx")
+# if not GdealDF.empty:
+#     dDF = pd.DataFrame()
+#     for idx, row in GdealDF.iterrows():       
+#         if row.Action == "Buy":
+#             l = []
+#             l.append(row.StockID)
+#             l.append(row.Price)
+#             l.append(round(row.Price * 1.01, 1))
+#             l.append(round(row.Price * (1 - 0.02), 1))
+#             dDF = dDF.append(pd.DataFrame([l], columns = ["StockID", "Buy", "UP", "DOWN"]))
+#     file.GeneratorFromDF(dDF, "./data/ActuralTrade/Dealbuy.xlsx")
 
 # 9.由庫存中找出己成交的股票
 newBuyDF = con(api).getTreasuryStockDF(exclude = whList)
@@ -238,7 +258,16 @@ BuyDF = stg(newBuyDF).genBuyWithSellPriceDF(gfile = True)
 canceltime = "10:" + str(random.choice(range(10, 30)))
 
 stopcancel = False
+runtimes = 0
 while True:
+    runtimes += 1
+    if runtimes % 30 == 0:
+        ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fpath = f"./data/ActuralTrade/Tick_{ymd}.xlsx"
+        file.GeneratorFromDF(TickDF, fpath)
+        logger.info(f"Generate Tick File!{ymd}")
+
+
     callbackListDataToDF()
     # 取得現行報價
     SnapShot = con(api).getMinSnapshotData(contracts)
