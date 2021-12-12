@@ -105,7 +105,7 @@ def getExcuteTime():
 # 先檢查資料夾是否存在..沒有就建立
 tool.checkCreateYearMonthPath()
 
-chk_sec = 30
+chk_sec = 20
 
 # 1.連接Server,指定帳號(預設chris),使用的CA(預設None)
 api = con().ServerConnectLogin( user = "lydia")
@@ -122,7 +122,7 @@ R1_BuyDF = pd.DataFrame()
 resultDF = pd.DataFrame()
 
 while True:
-    secDF = con(api).getMinSnapshotData(contracts)
+    secDF = con(api).getSnapshotDataByStockIDs(contracts)
     # 09:05前就只要做snapshot
     if datetime.now().strftime("%H:%M") < "09:05":
         tool.WaitingTimeDecide(chk_sec)
@@ -160,7 +160,7 @@ file.GeneratorFromDF(R1_TradeDF, f"{trade_path}/Trade_{ymd}_R1.xlsx")
 
 
 # while True:
-#     secDF = con(api).getMinSnapshotData(contracts)
+#     secDF = con(api).getSnapshotDataByStockID(contracts)
     
 #     # 每分鐘存留一版secDF,做成minDF(0也要做一次)
 #     if dotimes % 2 == 0:

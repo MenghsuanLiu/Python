@@ -174,17 +174,17 @@ class connect:
     def getOpeningSnapshotData(self, contract:list, nmin_run:int = 0)->pd.DataFrame:
         # 這段是防止開盤後run時跑去等開盤時間
         if simulation().checkSimulationTime():
-            outDF = self.getMinSnapshotData(contract)
+            outDF = self.getSnapshotDataByStockIDs(contract)
             return outDF
         # 計算指定開盤後的時間,並取得該時間的snapshot
         self.opening = (datetime.strptime(self.opening, "%H:%M") + timedelta(minutes = nmin_run)).strftime("%H:%M")
         while True:    
             if datetime.now().strftime("%H:%M") == self.opening:
-                outDF = self.getMinSnapshotData(contract)
+                outDF = self.getSnapshotDataByStockIDs(contract)
                 break
         return outDF 
 
-    def getMinSnapshotData(self, ctract:list):
+    def getSnapshotDataByStockIDs(self, ctract:list):
         minDF = pd.DataFrame(self.api.snapshots(ctract)).filter(items = ["code", "ts", "open", "high", "low", "close", "volume" ]).rename(columns = {"code": "StockID", "ts": "DateTime", "open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"})
         minDF.DateTime = pd.to_datetime(minDF.DateTime)
         minDF["TradeDate"] = pd.to_datetime(minDF.DateTime).dt.strftime("%Y%m%d")
@@ -331,12 +331,14 @@ class connect:
     def getOrderStatusDF(self):
         pass
 
-    def SubscribeTick(self, contract):
-        # https://sinotrade.github.io/tutor/market_data/streaming/futures/
-        self.api.quote.subscribe(contract, quote_type = "tick", version = "v1")
+    def SubscribeTickByStockList(self, stk_lst:list):
+        # https://sinotrade.github.io/tutor/market_data/streaming/stocks/#bidask
+        for id in stk_lst:
+            self.api.quote.subscribe(self.api.Contracts.Stocks[id], quote_type = "tick", version = "v1") # intraday_odd = True(盤中零股)
 
-    def UnsubscribeTick(self, contract):
-        self.api.quote.unsubscribe(contract, quote_type = "tick")
+    def UnsubscribeTickByStockList(self, stk_lst:list):
+        for id in stk_lst:
+            self.api.quote.unsubscribe(self.api.Contracts.Stocks[id], quote_type = "tick")
 
 class db:
     def __init__(self):

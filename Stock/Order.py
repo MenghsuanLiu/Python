@@ -1,7 +1,5 @@
 # %%
 
-# Tick to DF
-
 import pandas as pd
 import random
 import sys
@@ -10,9 +8,9 @@ import os
 import shioaji as sj
 from shioaji import TickSTKv1, Exchange
 from datetime import datetime, timedelta
-from util.util import connect as con, file, strategy as stg, tool
+from util.util import connect as con, file, strategy as stg, simulation as sim, tool
 from util.Logger import create_logger
-
+from scipy.stats import linregress
 
 itemorder = []
 itemdeal = []
@@ -118,21 +116,88 @@ def buyStocksGenerate(maxNum):
         yield maxNum
         maxNum -= 1
 
+# 這個function是初期再對focus的股票再做一次低價的選選股
+def decideRealBuyList(stgBuy:pd.DataFrame, price:float, Stk_num:int)->list:
+    BuyIDs = []
+    try:
+        excludeID = tool.DFcolumnToList(pd.read_excel("./data/Exclude.xlsx"), "StockID")
+        stgBuyDF = stgBuy[~stgBuy.StockID.isin(excludeID)]
+    except:
+        stgBuyDF = stgBuy
+    # 產生一個連續數值的list, 2->[2,1] , 3->[3,2,1]....
+    BuyDecide = buyStocksGenerate(Stk_num)
+    for i in BuyDecide:
+        try:
+            BuyIDs = random.sample(tool.DFcolumnToList(stgBuyDF.loc[stgBuyDF.Open <= price], "StockID"), k = i)
+            break
+        except:
+            continue
+    return BuyIDs
 
-pid = os.getpid() 
+def makeBuyAction(api:sj.Shioaji, buy:list, choose:list):
+    for id in buy:
+        if id in choose:
+            con(api).StockNormalBuySell(stkid = id, price = "up", qty = 1, action = "Buy")
+            logger.info(f"Buy {id}(漲停)")
+            continue
+        con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Buy")
+        logger.info(f"Buy {id}(跌停)")
+    # 休息5秒,取得成交回報
+    time.sleep(5)
 
+# def calFocusStockTrend()->pd.DataFrame:
+def calFocusStockTrend():
+    getTrend = []
 
-logger = create_logger("./logs")
-logger.info(f"Start PID = {pid}")
+    if not TickDF.empty:
+        bkTickDF = TickDF.copy(deep = True).sort_values(by = ["StockID", "TradeTime"]) # deep = True 才不會改到原始的DF
+        for stockid, oneStkDF in bkTickDF.groupby("StockID"):
+            oneStkDF.reset_index(inplace = True, drop = True)
+            reg_up = linregress(x = oneStkDF.index, y = oneStkDF.Close)
+            up_line = reg_up.intercept + reg_up.slope * oneStkDF.index
+            # up_line = reg_up[1] + reg_up[0] * oneStkDF.index
+    
+            oneStkDFtmp = oneStkDF[oneStkDF.Close < up_line]
+            while len(oneStkDFtmp) >= 5:
+                reg_new = linregress(x = oneStkDFtmp.index, y = oneStkDFtmp.Close)
+                up_new = reg_new.intercept + reg_new.slope * oneStkDFtmp.index
+                oneStkDFtmp = oneStkDFtmp[oneStkDFtmp.Close < up_new]
+            oneStkDF["Low_Trend"] = reg_new[1] + reg_new[0] * oneStkDF.index
+            if oneStkDF.Low_Trend.head(1).values - oneStkDF.Low_Trend.tail(1).values < 0:
+                val = "-"
+            else:
+                val = "+"
+
+            l = []
+            l.append(stockid)
+            l.append(val)
+            getTrend.append(l)
+        TrendDF = pd.DataFrame(getTrend, columns = ["StockID", "Trend"])
+        ymd = datetime.now().strftime("%Y%m%d")
+        path = f"./data/ActuralTrade/{ymd[0:6]}"
+        if not TrendDF.empty:
+            fpath = f"{path}/Trend_{ymd}.xlsx"
+            file.GeneratorFromDF(TrendDF, fpath)
+            logger.info(f"Generate Trend File Down!")    
+        # return pd.DataFrame(getTrend, columns = ["StockID", "Trend"])
 
 
 # 先檢查資料夾是否存在..沒有就建立
 tool.checkCreateYearMonthPath()
 
+pid = os.getpid() 
+# 開始log
+logger = create_logger("./logs")
+logger.info(f"Start PID = {pid}")
+
 check_secs = 20
 # 1.連接Server,指定帳號(預設chris),使用的CA(預設None)
 api = con().ServerConnectLogin(ca = "chris")
+# api = con().ServerConnectLogin(simulte = True)
+# 註:更換另一個帳號
+# con(api).ChangeTradeCA(ca = "lydia")
 
+# 1.1 設定回報Tick資料
 @api.on_tick_stk_v1()
 def quote_callback(exchange: Exchange, tick:TickSTKv1):
     global TickDF
@@ -158,162 +223,108 @@ def quote_callback(exchange: Exchange, tick:TickSTKv1):
     TickDF = TickDF.append(pd.DataFrame([l], columns = col))
     # logger.info(f"Exchange: {exchange}, Tick: {tick}")
 
-# @api.quote.on_event
-# def event_callback(resp_code: int, event_code: int, info: str, event: str):
-#     global eventDF
-#     l = []
-#     l.append(resp_code)
-#     l.append(event_code)
-#     l.append(info)
-#     l.append(event)
-#     l.append(datetime.now().strftime("%H:%M:%S.%f"))
-#     eventDF = eventDF.append(pd.DataFrame([l], columns = ["resp_code", "event_code", "info", "event", "ReceiveTime"]))
-#     # print(f'Event code: {event_code} | Event: {event} | Resp_Code: {resp_code} | info: {info}')
-
-# api = con().ServerConnectLogin(simulte = True)
-# 註:更換另一個帳號
-# con(api).ChangeTradeCA(ca = "lydia")
-
-# 2.設定成交即時回報
-api.set_order_callback(placeOrderCallBack)
-
-# 3.取得現有庫存
+# 1.2 取得現有庫存
 whList = tool.DFcolumnToList(con(api).getTreasuryStockDF(), "code")
 # whList = ["00885", "1301", "1904", "2002", "2330", "2353", "2616", "2705", "2823", "2883", "3186", "3258", "3704"]
 
+# 1.3 設定交易即時回報
+api.set_order_callback(placeOrderCallBack)
 
-# 4.依策略決定下單清單
+# 2.依策略決定下單清單
 stkDF = file().getLastFocusStockDF()
 stkDF = stg(stkDF).getFromFocusOnByStrategy()
-# 5.組合需要抓價量的Stocks(不能當沖的不放進來)
+# 2.1 需要訂閱的股票清單
+subList = tool.DFcolumnToList(stkDF, "StockID")
+# 2.2 訂閱(Focus)
+con(api).SubscribeTickByStockList(subList)
+
+# 3.組合需要抓價量的Stocks(不能當沖的不放進來)
 contracts = con(api).getContractForAPI(stkDF)
 
-# 5.取得開盤後5min的OHLC的值(測試時會自動立即run)
-minSnapDF = con(api).getOpeningSnapshotData(contract = contracts, nmin_run = 5)
 
-# 6.依買的策略產生Buy List
-stgBuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_01(minSnapDF)
-
-# stgBuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_03(minSnapDF)
-BuyList = tool.DFcolumnToList(stgBuyDF, "StockID")
-
-# 7.下單--超過30就停止
-# if len(BuyList) > 30:
-#     sys.exit()
-# random.sample不會抓重覆 random.choices會抓重覆
-# BuyList = random.choices(BuyList, k = random.choice(range(1,len(BuyList))))
-# if len(BuyList) > 10:
-#     BuyList = random.sample(BuyList, k = 1)
-
-# 7.選一筆<=40做漲停板(買的到),其他的部份跌停板(買不到)
-excludeID = tool.DFcolumnToList(pd.read_excel("./data/Exclude.xlsx"), "StockID")
-stgBuyDF = stgBuyDF[~stgBuyDF.StockID.isin(excludeID)]
-chooseID = []
-BuyDecide = buyStocksGenerate(2)
-for i in BuyDecide:
-    try:
-        chooseID = random.sample(tool.DFcolumnToList(stgBuyDF.loc[stgBuyDF.Open <= 60], "StockID"), k = i)
-        break
-    except:
-        continue
-
-for id in BuyList:
-    if id in chooseID:
-        con(api).StockNormalBuySell(stkid = id, price = "up", qty = 1, action = "Buy")
-        try:
-            api.quote.subscribe(api.Contracts.Stocks[id], quote_type = "tick", version = "v1")
-        except:
-            pass
-        logger.info(f"Buy {id}(漲停)")
-        continue
-    con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Buy")
-    logger.info(f"Buy {id}(跌停)")
-# 8.休息5秒,取得成交回報
-time.sleep(5)
-callbackListDataToDF()
-
-tool.WaitingTimeDecide(check_secs)
-
-# 處理成交的部份
-# if not GdealDF.empty:
-#     dDF = pd.DataFrame()
-#     for idx, row in GdealDF.iterrows():       
-#         if row.Action == "Buy":
-#             l = []
-#             l.append(row.StockID)
-#             l.append(row.Price)
-#             l.append(round(row.Price * 1.01, 1))
-#             l.append(round(row.Price * (1 - 0.02), 1))
-#             dDF = dDF.append(pd.DataFrame([l], columns = ["StockID", "Buy", "UP", "DOWN"]))
-#     file.GeneratorFromDF(dDF, "./data/ActuralTrade/Dealbuy.xlsx")
-
-# 9.由庫存中找出己成交的股票
-newBuyDF = con(api).getTreasuryStockDF(exclude = whList)
-
-# 產生要賣的DF("StockID", "Buy", "UP", "DOWN")
-BuyDF = stg(newBuyDF).genBuyWithSellPriceDF(gfile = True)
-
-# BuyDF = getNewBuyDFforGetDealOrder(api, BuyList)...這由Deal產生...要再研究
-
-canceltime = "10:" + str(random.choice(range(10, 30)))
-
-stopcancel = False
+getBuyData = False  #判斷是否run過取BUY資料
+stopcancel = False  #判斷是否run過取消買賣資料
+chkpoint = "09:05"
+closepoint = "13:25"
+cancelpoint = "10:" + str(random.choice(range(10, 30)))
 runtimes = 0
+# 非開盤時間要修正檢查時間
+if sim().checkSimulationTime():
+    chkpoint = (datetime.now() + timedelta(minutes = 1)).strftime("%H:%M")
+    cancelpoint = (datetime.now() + timedelta(minutes = 3)).strftime("%H:%M")
+    closepoint = (datetime.now() + timedelta(minutes = 5)).strftime("%H:%M")
+
 while True:
+    # 一小時寫一次Tick的xlsx
     runtimes += 1
-    if runtimes % 30 == 0:
+    if runtimes % 180 == 0:
         ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
         fpath = f"./data/ActuralTrade/Tick_{ymd}.xlsx"
         file.GeneratorFromDF(TickDF, fpath)
         logger.info(f"Generate Tick File!{ymd}")
 
-
-    callbackListDataToDF()
-    # 取得現行報價
-    SnapShot = con(api).getMinSnapshotData(contracts)
-
-    if datetime.now().strftime("%H:%M") == canceltime and not stopcancel:
+    # 取得每次的snapshot
+    eachSnapDF = con(api).getSnapshotDataByStockIDs(contracts)
+    # 09:05前就只要做snapshot
+    if datetime.now().strftime("%H:%M") < chkpoint:
+        tool.WaitingTimeDecide(check_secs)
+        continue
+    
+    # 用開盤5min的snapshot決定買入
+    if datetime.now().strftime("%H:%M") == chkpoint and not getBuyData:
+        getBuyData = True
+        # 依買的策略產生Buy List
+        stgBuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_01(eachSnapDF)
+        BuyList = tool.DFcolumnToList(stgBuyDF, "StockID")
+        # 選一筆<=60做漲停板(買的到),其他的部份跌停板(買不到)
+        ManualBuyList = decideRealBuyList(stgBuyDF, 60, 2)
+        # 下單
+        makeBuyAction(api, BuyList, ManualBuyList)
+        # 計算趨勢線,寫入excel中
+        calFocusStockTrend()
+        tool.WaitingTimeDecide(check_secs)
+        continue
+    
+    # 時間到了,取消沒有成交的部份
+    if datetime.now().strftime("%H:%M") == cancelpoint and not stopcancel:
         # 有買的就不cancel
         stopcancel = True
-        cancellist = tool.DFcolumnToList(stgBuyDF[~stgBuyDF.StockID.isin(chooseID)], "StockID")
+        cancellist = tool.DFcolumnToList(stgBuyDF[~stgBuyDF.StockID.isin(ManualBuyList)], "StockID")
         logger.info(f"cancel list: {cancellist}")
         for id in cancellist:
             con(api).StockCancelOrder(id)
-    # 當stopget==True時,就不跑下面的程式
-    # if not stopget:
-    newBuyDF = con(api).getTreasuryStockDF(exclude = whList)
-    BuyDF = stg(newBuyDF).rebuildBuyWithSellPriceDF(BuyDF, gfile = True)
-    # stopget, BuyDF = stg(newBuyDF).rebuildBuyWithSellPriceDF(BuyDF, gfile = True)
 
-    # 不是空值才需要往下檢查是否要賣出
+    # 把Deal及Order的call back資料寫到DF中
+    callbackListDataToDF()
+    # 由庫存中找出己成交的股票
+    newBuyDF = con(api).getTreasuryStockDF(exclude = whList)
+    # 產生要賣的DF("StockID", "Buy", "UP", "DOWN")
+    BuyDF = stg(newBuyDF).genBuyWithSellPriceDF(gfile = True)
+
+   # 不是空值才需要往下檢查是否要賣出
     if not BuyDF.empty:
         # 盤中遇到價格>=買價的1% or 價格<=買價的2%(就做賣單: Sell + 跌停價)
         for idx, row in BuyDF.iterrows():
-            nowprice = SnapShot[SnapShot.StockID == row.StockID].Close.values[0]
+            nowprice = eachSnapDF[eachSnapDF.StockID == row.StockID].Close.values[0]
             if nowprice >= row.UP or nowprice <= row.DOWN:
                 con(api).StockNormalBuySell(stkid = str(row.StockID), price = "down", qty = 1, action = "Sell")
                 logger.info(f"Sell {row.StockID}")
                 continue
 
         # # 收盤前5mins要清倉(Sell + 跌停價)
-        if datetime.now().strftime("%H:%M") == "13:25":
+        if datetime.now().strftime("%H:%M") == closepoint:
             SellList = tool.DFcolumnToList(BuyDF, "StockID")
             for id in SellList:
                 con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Sell")
                 logger.info(f"Sell {row.StockID}")
             break
 
-    if datetime.now().strftime("%H:%M") >= "13:25":
+    if datetime.now().strftime("%H:%M") >= closepoint:
+        # 取消訂閱
+        con(api).UnsubscribeTickByStockList(subList)
         break
 
     tool.WaitingTimeDecide(check_secs)
-
-if id in chooseID:
-    try:
-        api.quote.unsubscribe(api.Contracts.Stocks[id], quote_type = "tick")
-    except:
-        pass
-
 
 ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
 path = f"./data/ActuralTrade/{ymd[0:6]}"
@@ -325,85 +336,6 @@ if not GdealDF.empty:
     fpath = f"{path}/deal_{ymd}.xlsx"
     file.GeneratorFromDF(GdealDF, fpath)
     logger.info(f"Generate Deal File Down!")
-if not eventDF.empty:
-    fpath = f"{path}/event_{ymd}.xlsx"
-    file.GeneratorFromDF(eventDF, fpath)
-    logger.info(f"Generate Event File Down!")
-
 logger.info("End")
 
 
-
-
-# # 8.固定時間觀察訂單狀況,決定策略datetime.now()大約會在09:05
-# tims_bfcls = tool.calcuateFrequencyBetweenTwoTime(stime = datetime.now().strftime("%H:%M:%S"), etime = "13:25:00", feq = check_secs)
-# canceltime = random.choice(range(180, 250))
-# t = 0
-# trade_list = []
-# while True:
-#     t += 1
-   
-#     if t == canceltime:
-#         con(api).StockCancelOrder()
-
-#     # 收盤前5mins要清倉
-#     if datetime.now().strftime("%H:%M") == "13:25":
-        
-#         break    
-
-
-#     api.update_status(api.stock_account)
-#     for i in range(0, len(api.list_trades())):
-#         l = []
-#         l.append(api.list_trades()[i].contract.code)
-#         l.append(api.list_trades()[i].order.action.value)
-#         l.append(api.list_trades()[i].order.price)
-#         l.append(api.list_trades()[i].order.quantity)
-#         l.append(api.list_trades()[i].status.status_code)
-#         l.append(api.list_trades()[i].status.status.value)
-#         l.append(api.list_trades()[i].status.order_datetime.strftime("%Y/%m/%d"))
-#         l.append(api.list_trades()[i].status.order_datetime.strftime("%H:%M:%S"))
-#         l.append(datetime.today().strftime("%Y/%m/%d %H:%M:%S"))
-#         trade_list.append(l)
-       
-#     # 休息時間
-#     tool.WaitingTimeDecide(check_secs)
-
-
-
-# ymd = datetime.now().strftime("%Y%m%d")
-# if trade_list != []:
-#     col = ["StockID", "Action", "OrderPrice", "OrderQty", "StatusCode", "Status", "TradeDate", "TradeTime", "DateTime"]
-#     tradesDF = pd.DataFrame(trade_list, columns = col).drop_duplicates(subset = ["StockID", "Status"], keep = "first").reset_index(drop = True)
-#     file.GeneratorFromDF(tradesDF, f"./data/ActuralTrade/tradeupdate_{ymd}.xlsx")
-
-# if odr != []:
-#     col = ["StockID", "Action", "Price", "Qty", "OrderType", "PriceType", "Cancel",  "TradeDate", "TradeTime"]
-#     orderDF = pd.DataFrame(odr, columns = col)
-#     file.GeneratorFromDF(orderDF, f"./data/ActuralTrade/order_{ymd}.xlsx")
-
-# if deal != []:
-#     col = ["StockID", "Action", "Price", "Qty", "TradeDate", "TradeTime"]
-#     dealDF = pd.DataFrame(deal, columns = col)
-#     file.GeneratorFromDF(orderDF, f"./data/ActuralTrade/deal_{ymd}.xlsx")
-
-
-# api.list_trades()[0].status.order_datetime.strftime("%Y/%m/%d %H:%M:%S")
-# api.list_trades()[0].status.status_code
-# api.list_trades()[0].status.status.value
-# api.list_trades()[0].order.price
-# # PendingSubmit: 傳送中
-# # PreSubmitted: 預約單
-# # Submitted: 傳送成功
-# # Failed: 失敗
-# # Cancelled: 已刪除
-# # Filled: 完全成交
-# # Filling: 部分成交
-
-# api.list_trades()[0].contract.code
-
-
-# # 庫存資料轉DF
-# pd.DataFrame(api.list_positions(api.stock_account))
-
-# %%
