@@ -876,7 +876,7 @@ class tool:
             wait = secs - (int(datetime.now().strftime("%S")) % secs)
         time.sleep(wait)
     
-    def calcuateFrequencyBetweenTwoTime(stime:str = "09:00:00", etime:str = "13:30:00", feq:int = 30):
+    def calculateFrequencyBetweenTwoTime(stime:str = "09:00:00", etime:str = "13:30:00", feq:int = 30):
         step = 0
         if stime > etime:
             step = 10

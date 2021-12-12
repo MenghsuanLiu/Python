@@ -148,7 +148,6 @@ def makeBuyAction(api:sj.Shioaji, buy:list, choose:list):
 # def calFocusStockTrend()->pd.DataFrame:
 def calFocusStockTrend():
     getTrend = []
-
     if not TickDF.empty:
         bkTickDF = TickDF.copy(deep = True).sort_values(by = ["StockID", "TradeTime"]) # deep = True 才不會改到原始的DF
         for stockid, oneStkDF in bkTickDF.groupby("StockID"):
@@ -163,16 +162,18 @@ def calFocusStockTrend():
                 up_new = reg_new.intercept + reg_new.slope * oneStkDFtmp.index
                 oneStkDFtmp = oneStkDFtmp[oneStkDFtmp.Close < up_new]
             oneStkDF["Low_Trend"] = reg_new[1] + reg_new[0] * oneStkDF.index
-            if oneStkDF.Low_Trend.head(1).values - oneStkDF.Low_Trend.tail(1).values < 0:
-                val = "-"
-            else:
+            if reg_new.slope >= 0:
                 val = "+"
+            else:  
+                val = "-"  
 
             l = []
             l.append(stockid)
             l.append(val)
+            l.append(reg_up.slope)
+            l.append(reg_new.slope)
             getTrend.append(l)
-        TrendDF = pd.DataFrame(getTrend, columns = ["StockID", "Trend"])
+        TrendDF = pd.DataFrame(getTrend, columns = ["StockID", "Trend", "orgSlope", "newSlope"])
         ymd = datetime.now().strftime("%Y%m%d")
         path = f"./data/ActuralTrade/{ymd[0:6]}"
         if not TrendDF.empty:
@@ -317,6 +318,8 @@ while True:
             for id in SellList:
                 con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Sell")
                 logger.info(f"Sell {row.StockID}")
+            # 取消訂閱    
+            con(api).UnsubscribeTickByStockList(subList)
             break
 
     if datetime.now().strftime("%H:%M") >= closepoint:
@@ -337,5 +340,3 @@ if not GdealDF.empty:
     file.GeneratorFromDF(GdealDF, fpath)
     logger.info(f"Generate Deal File Down!")
 logger.info("End")
-
-

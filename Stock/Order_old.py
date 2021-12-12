@@ -20,17 +20,19 @@ for stockid, oneStkDF in TicksDF.groupby("StockID"):
         up_new = reg_new.intercept + reg_new.slope * oneStkDFtmp.index
         oneStkDFtmp = oneStkDFtmp[oneStkDFtmp.Close < up_new]
     oneStkDF["Low_Trend"] = reg_new[1] + reg_new[0] * oneStkDF.index
-    if oneStkDF.Low_Trend.head(1).values - oneStkDF.Low_Trend.tail(1).values < 0:
-        val = "-"
-    else:
+    if reg_new.slope >= 0:
         val = "+"
+    else:  
+        val = "-"  
 
     l = []
     l.append(stockid)
     l.append(val)
+    l.append(reg_up.slope)
+    l.append(reg_new.slope)
     getTrend.append(l)
+TrendDF = pd.DataFrame(getTrend, columns = ["StockID", "Trend", "orgSlope", "newSlope"])
 
-TrendDF = pd.DataFrame(getTrend, columns = ["StockID", "Trend"])
 
 
 # %%
@@ -191,7 +193,7 @@ TrendDF = pd.DataFrame(getTrend, columns = ["StockID", "Trend"])
 
 
 # # 8.固定時間觀察訂單狀況,決定策略datetime.now()大約會在09:05
-# tims_bfcls = tool.calcuateFrequencyBetweenTwoTime(stime = datetime.now().strftime("%H:%M:%S"), etime = "13:25:00", feq = check_secs)
+# tims_bfcls = tool.calculateFrequencyBetweenTwoTime(stime = datetime.now().strftime("%H:%M:%S"), etime = "13:25:00", feq = check_secs)
 # canceltime = random.choice(range(180, 250))
 # t = 0
 # trade_list = []
