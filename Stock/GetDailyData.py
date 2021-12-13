@@ -315,7 +315,21 @@ if not RSIsmiDF.empty:
     file.GeneratorFromDF(RSIsmiDF, fpath)
 
 
+today = datetime.now().strftime("%Y-%m-%d")
+sql = f"SELECT StockID, Date(TradeDateTime) as TickDate, TIME_FORMAT(TradeDateTime, '%T.%f') as TickTime, Close, Volume, BidPrice, BidVolume, AskPrice, AskVolume FROM dailyticks WHERE Date(TradeDateTime) = '{today}' AND Time(TradeDateTime) <= '09:05:00'"
+TicksDF = db().selectDatatoDF(sql_statment = sql).sort_values(by = ["StockID", "TickDate", "TickTime"])
+
+tickpath = "./data/PlotData/Ticks.csv"
+if not tool.checkFileExist(tickpath):
+    file.GeneratorFromDF(TicksDF, tickpath, "csv")
+else:
+    with open(tickpath, "a") as f:
+        TicksDF.to_csv(f, header = False, index = False)
+
 # %%
+
+
+
 # 只要上市/上櫃,不要金融, KY股, 股價>=20
 # def getStockData(api, stocks):
 #     # api.Contracts.Stocks資料結構

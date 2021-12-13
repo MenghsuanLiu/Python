@@ -1010,8 +1010,8 @@ class simulation:
     def __init__(self):
         self.chk_date = datetime.today().date()
         self.chk_time = datetime.today().time()
-        self.opentime = datetime.strptime("09:00:00", "%H:%M:%S").time()
-        self.closetime = datetime.strptime("13:30:00", "%H:%M:%S").time()
+        self.opentime = datetime.strptime("08:30:00", "%H:%M:%S").time()
+        self.closetime = datetime.strptime("14:00:00", "%H:%M:%S").time()
 
     def checkSimulationTime(self, i_date:str = None, i_time:str = None)->bool:
         if i_date:
