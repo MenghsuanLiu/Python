@@ -2,7 +2,7 @@
 import pandas as pd
 from datetime import date, timedelta, datetime
 from util.util import connect as con, indicator as ind, cfg, db, file, tool, craw, strategy as stg, simulation as sim
-
+# %%
 def writeDailyRawDataDB(api = None, StkDF: pd.DataFrame = None):
     tb = cfg().getValueByConfigFile(key = "tb_daily")
     sql = f"SELECT StockID, MAX(TradeDate) as TradeDate FROM {tb} group by StockID"
@@ -324,7 +324,7 @@ if not tool.checkFileExist(tickpath):
     file.GeneratorFromDF(TicksDF, tickpath, "csv")
 else:
     with open(tickpath, "a") as f:
-        TicksDF.to_csv(f, header = False, index = False)
+        TicksDF.to_csv(f, header = False, index = False, line_terminator = "\n")
 
 # %%
 

@@ -1,38 +1,46 @@
 # %%
-from util.util import db
+from util.util import db, file
 from scipy.stats import linregress
 import pandas as pd
+from datetime import datetime
 
 getTrend = []
-sql = f"SELECT * FROM dailyticks WHERE Date(TradeDateTime) = 20211210 AND Time(TradeDateTime) <= '09:05:00'"
-TicksDF = db().selectDatatoDF(sql_statment = sql).sort_values(by = ["StockID", "TradeDateTime"])
+sql = f"SELECT * FROM dailyticks WHERE Date(TradeDateTime) = 20211214 AND Time(TradeDateTime) <= '09:05:00'"
+# TicksDF = db().selectDatatoDF(sql_statment = sql).sort_values(by = ["StockID", "TradeDateTime"])
+TicksDF = db().selectDatatoDF(sql_statment = sql)
 
-for stockid, oneStkDF in TicksDF.groupby("StockID"):
-    oneStkDF.reset_index(inplace = True, drop = True)
-    reg_up = linregress(x = oneStkDF.index, y = oneStkDF.Close)
-    up_line = reg_up.intercept + reg_up.slope * oneStkDF.index
-    # oneStkDF["Low_Trend"] = reg_up.intercept + reg_up.slope * oneStkDF.index
-    # up_line = reg_up[1] + reg_up[0] * oneStkDF.index
-    
-    oneStkDFtmp = oneStkDF[oneStkDF.Close < up_line]
-    while len(oneStkDFtmp) >= 5:
-        reg_new = linregress(x = oneStkDFtmp.index, y = oneStkDFtmp.Close)
-        up_new = reg_new.intercept + reg_new.slope * oneStkDFtmp.index
-        oneStkDFtmp = oneStkDFtmp[oneStkDFtmp.Close < up_new]
-    oneStkDF["Low_Trend"] = reg_new[1] + reg_new[0] * oneStkDF.index
-    if reg_new.slope >= 0:
-        val = "+"
-    else:  
-        val = "-"  
+if not TicksDF.empty:
+    bkTickDF = TicksDF.copy(deep = True).sort_values(by = ["StockID", "TradeDateTime"])
+    for stockid, oneStkDF in bkTickDF.groupby("StockID"):
+        oneStkDF.reset_index(inplace = True, drop = True)
+        reg_up = linregress(x = oneStkDF.index, y = oneStkDF.Close)
+        up_line = reg_up.intercept + reg_up.slope * oneStkDF.index
+        # oneStkDF["Low_Trend"] = reg_up.intercept + reg_up.slope * oneStkDF.index
+        # up_line = reg_up[1] + reg_up[0] * oneStkDF.index
+        
+        oneStkDFtmp = oneStkDF[oneStkDF.Close < up_line]
+        while len(oneStkDFtmp) >= 5:
+            reg_new = linregress(x = oneStkDFtmp.index, y = oneStkDFtmp.Close)
+            up_new = reg_new.intercept + reg_new.slope * oneStkDFtmp.index
+            oneStkDFtmp = oneStkDFtmp[oneStkDFtmp.Close < up_new]
+        oneStkDF["Low_Trend"] = reg_new.intercept + reg_new.slope * oneStkDF.index
+        if reg_new.slope >= 0:
+            val = "+"
+        else:  
+            val = "-"  
 
-    l = []
-    l.append(stockid)
-    l.append(val)
-    l.append(reg_up.slope)
-    l.append(reg_new.slope)
-    getTrend.append(l)
-TrendDF = pd.DataFrame(getTrend, columns = ["StockID", "Trend", "orgSlope", "newSlope"])
-
+        l = []
+        l.append(stockid)
+        l.append(val)
+        l.append(reg_up.slope)
+        l.append(reg_new.slope)
+        getTrend.append(l)
+    TrendDF = pd.DataFrame(getTrend, columns = ["StockID", "Trend", "orgSlope", "newSlope"])
+    ymd = datetime.now().strftime("%Y%m%d")
+    path = f"./data/ActuralTrade/{ymd[0:6]}"
+    if not TrendDF.empty:
+        fpath = f"{path}/Trend_{ymd}.xlsx"
+        file.GeneratorFromDF(TrendDF, fpath)
 
 
 # %%
