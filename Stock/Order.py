@@ -6,6 +6,7 @@ import sys
 import time
 import os
 import shioaji as sj
+import threading
 from shioaji import TickSTKv1, Exchange
 from datetime import datetime, timedelta
 from util.util import connect as con, file, strategy as stg, simulation as sim, tool
@@ -146,34 +147,36 @@ def makeBuyAction(api:sj.Shioaji, buy:list, choose:list):
     time.sleep(5)
 
 # def calFocusStockTrend()->pd.DataFrame:
-def calFocusStockTrend():
+def calFocusStockTrend(tick:pd.DataFrame):
     getTrend = []
     try:        
-        if not TickDF.empty:
-            bkTickDF = TickDF.copy(deep = True).sort_values(by = ["StockID", "TradeTime"]) # deep = True 才不會改到原始的DF
+        if not tick.empty:
+            bkTickDF = tick.copy(deep = True).sort_values(by = ["StockID", "TradeTime"]) # deep = True 才不會改到原始的DF
             for stockid, oneStkDF in bkTickDF.groupby("StockID"):
                 oneStkDF.reset_index(inplace = True, drop = True)
                 reg_up = linregress(x = oneStkDF.index, y = oneStkDF.Close)
                 up_line = reg_up.intercept + reg_up.slope * oneStkDF.index
         
                 oneStkDFtmp = oneStkDF[oneStkDF.Close < up_line]
-                while len(oneStkDFtmp) >= 5:
+                feq = 0
+                while len(oneStkDFtmp) >= 5 and feq < 50:
+                    feq += 1
                     reg_new = linregress(x = oneStkDFtmp.index, y = oneStkDFtmp.Close)
                     up_new = reg_new.intercept + reg_new.slope * oneStkDFtmp.index
                     oneStkDFtmp = oneStkDFtmp[oneStkDFtmp.Close < up_new]
-                oneStkDF["Low_Trend"] = reg_new[1] + reg_new[0] * oneStkDF.index
-                if reg_new.slope >= 0:
+                oneStkDF["Low_Trend"] = reg_new.intercept + reg_new.slope * oneStkDF.index
+                if reg_up.slope >= 0:
                     val = "+"
                 else:  
                     val = "-"  
 
                 l = []
-                l.append(stockid)
-                l.append(val)
-                l.append(reg_up.slope)
-                l.append(reg_new.slope)
+                l.append(str(stockid))
+                l.append(str(val))
+                l.append(float(reg_up.slope))
+                l.append(float(reg_new.slope))
                 getTrend.append(l)
-            TrendDF = pd.DataFrame(getTrend, columns = ["StockID", "Trend", "orgSlope", "newSlope"])
+            TrendDF = pd.DataFrame(getTrend, columns = ["StockID", "Trend", "SlopeOrg", "SlopeNew"])
             ymd = datetime.now().strftime("%Y%m%d")
             path = f"./data/ActuralTrade/{ymd[0:6]}"
             if not TrendDF.empty:
@@ -276,6 +279,14 @@ while True:
     # 用開盤5min的snapshot決定買入
     if datetime.now().strftime("%H:%M") == chkpoint and not getBuyData:
         getBuyData = True
+        # 計算趨勢線,寫入excel中(用另一個process處理)
+        # calFocusStockTrend(TickDF)
+        try:
+            newthread = threading.Thread(target = calFocusStockTrend(TickDF))
+            newthread.start
+        except Exception as exc:
+            logger.error(f"Threding Error! {exc}")
+        
         # 依買的策略產生Buy List
         stgBuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_01(eachSnapDF)
         BuyList = tool.DFcolumnToList(stgBuyDF, "StockID")
@@ -283,8 +294,6 @@ while True:
         ManualBuyList = decideRealBuyList(stgBuyDF, 60, 2)
         # 下單
         makeBuyAction(api, BuyList, ManualBuyList)
-        # 計算趨勢線,寫入excel中
-        # calFocusStockTrend()
         tool.WaitingTimeDecide(check_secs)
         continue
     
@@ -302,7 +311,7 @@ while True:
     # 由庫存中找出己成交的股票
     newBuyDF = con(api).getTreasuryStockDF(exclude = whList)
     # 產生要賣的DF("StockID", "Buy", "UP", "DOWN")
-    BuyDF = stg(newBuyDF).genBuyWithSellPriceDF(gfile = True)
+    BuyDF = stg(newBuyDF).genBuyWithSellPriceDF(BuyDF, gfile = True)
 
    # 不是空值才需要往下檢查是否要賣出
     if not BuyDF.empty:

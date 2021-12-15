@@ -499,3 +499,4 @@
 [E 2021-11-29 10:20:47,673 D:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'detail': '無原委託內容', 'sts_code': 74006}}
 [E 2021-11-29 10:20:47,723 D:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'detail': '無原委託內容', 'sts_code': 74006}}
 [E 2021-12-06 11:17:00,756 D:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {}
+[E 2021-12-14 21:23:00,223 d:\Python_venv\37_stock\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'token': '', 'accounts': [], 'detail': 'Incorrect userid or password', 'ip_address': '60.250.206.6', 'client_name': ''}}
