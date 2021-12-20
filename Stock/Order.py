@@ -15,12 +15,15 @@ from scipy.stats import linregress
 
 itemorder = []
 itemdeal = []
+ticks = []
 GorderDF = pd.DataFrame()
 GdealDF = pd.DataFrame()
+GtickDF = pd.DataFrame()
+stgBuyDF = pd.DataFrame()
 BuyDF = pd.DataFrame()
 whDF = pd.DataFrame()
 eventDF = pd.DataFrame()
-TickDF = pd.DataFrame()
+
 def placeOrderCallBack(state: sj.constant.OrderState, msg: dict): 
     if state == sj.constant.OrderState.TFTDeal:
         l = []
@@ -90,9 +93,10 @@ def ListToDF(item: list, func: str)->pd.DataFrame:
     return pd.DataFrame(item, columns = col)
     
 def callbackListDataToDF():
-    global GorderDF, GdealDF, itemorder, itemdeal
+    global GorderDF, GdealDF, GtickDF, itemorder, itemdeal, ticks
     oDF = pd.DataFrame()
     dDF = pd.DataFrame()
+    tDF = pd.DataFrame()
     ymdt = datetime.now().strftime("%Y%m%d_%H%M%S")
     if itemorder != []:
         col = ["StockID", "Action", "Price", "Qty", "OrderType", "PriceType", "CancelQty", "TradeDate", "TradeTime", "ReceiveTime"]
@@ -111,6 +115,13 @@ def callbackListDataToDF():
 
         fpath = f"./data/ActuralTrade/deal_{ymdt}.xlsx"
         file.GeneratorFromDF(dDF, fpath)
+
+    if ticks != []:
+        col = ["StockID", "TradeTime", "Open", "Close", "High", "Low", "Volume"]
+        GtickDF = GtickDF.append(pd.DataFrame(ticks, columns = col))
+        ticks.clear()
+
+
 
 def buyStocksGenerate(maxNum):
     while maxNum > 0:
@@ -137,34 +148,42 @@ def decideRealBuyList(stgBuy:pd.DataFrame, price:float, Stk_num:int)->list:
 
 def makeBuyAction(api:sj.Shioaji, buy:list, choose:list):
     for id in buy:
-        if id in choose:
-            con(api).StockNormalBuySell(stkid = id, price = "up", qty = 1, action = "Buy")
-            logger.info(f"Buy {id}(漲停)")
-            continue
+        # if id in choose:
+        #     con(api).StockNormalBuySell(stkid = id, price = "up", qty = 1, action = "Buy")
+        #     logger.info(f"Buy {id}(漲停)")
+        #     continue
         con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Buy")
         logger.info(f"Buy {id}(跌停)")
     # 休息5秒,取得成交回報
     time.sleep(5)
 
 # def calFocusStockTrend()->pd.DataFrame:
-def calFocusStockTrend(tick:pd.DataFrame):
+def calFocusStockTrend():
+    global GtickDF
     getTrend = []
+    pid = os.getpid() 
+    logger.info(f"Function calFocusStockTrend PID = {pid}")
     try:        
-        if not tick.empty:
-            bkTickDF = tick.copy(deep = True).sort_values(by = ["StockID", "TradeTime"]) # deep = True 才不會改到原始的DF
+        if not GtickDF.empty:
+            bkTickDF = GtickDF.copy(deep = True).sort_values(by = ["StockID", "TradeTime"]) # deep = True 才不會改到原始的DF
+            logger.info(f"由GtickDF產生bkDF")
             for stockid, oneStkDF in bkTickDF.groupby("StockID"):
                 oneStkDF.reset_index(inplace = True, drop = True)
+                logger.info(f"StockID = {stockid}, TickDF Reset index")
                 reg_up = linregress(x = oneStkDF.index, y = oneStkDF.Close)
+                logger.info(f"計算reg_up by linregress")
                 up_line = reg_up.intercept + reg_up.slope * oneStkDF.index
         
                 oneStkDFtmp = oneStkDF[oneStkDF.Close < up_line]
                 feq = 0
+                logger.info(f"求出最下面的點")
                 while len(oneStkDFtmp) >= 5 and feq < 50:
                     feq += 1
                     reg_new = linregress(x = oneStkDFtmp.index, y = oneStkDFtmp.Close)
                     up_new = reg_new.intercept + reg_new.slope * oneStkDFtmp.index
                     oneStkDFtmp = oneStkDFtmp[oneStkDFtmp.Close < up_new]
                 oneStkDF["Low_Trend"] = reg_new.intercept + reg_new.slope * oneStkDF.index
+                logger.info(f"斜率決定+/-")
                 if reg_up.slope >= 0:
                     val = "+"
                 else:  
@@ -206,7 +225,7 @@ api = con().ServerConnectLogin(ca = "chris")
 # 1.1 設定回報Tick資料
 @api.on_tick_stk_v1()
 def quote_callback(exchange: Exchange, tick:TickSTKv1):
-    global TickDF
+    global ticks
     l = []
     l.append(tick.code)
     l.append(tick.datetime.strftime("%H:%M:%S.%f"))
@@ -225,8 +244,7 @@ def quote_callback(exchange: Exchange, tick:TickSTKv1):
     # l.append(tick.ptc_chg)
     # l.append(tick.bid_side_total_vol)
     # l.append(tick.ask_side_total_vol)
-    col = ["StockID", "TradeTime", "Open", "Close", "High", "Low", "Volume"]
-    TickDF = TickDF.append(pd.DataFrame([l], columns = col))
+    ticks.append(l)
     # logger.info(f"Exchange: {exchange}, Tick: {tick}")
 
 # 1.2 取得現有庫存
@@ -250,6 +268,7 @@ contracts = con(api).getContractForAPI(stkDF)
 
 getBuyData = False  #判斷是否run過取BUY資料
 stopcancel = False  #判斷是否run過取消買賣資料
+secondrun = False
 chkpoint = "09:05"
 closepoint = "13:25"
 cancelpoint = "10:" + str(random.choice(range(10, 30)))
@@ -266,7 +285,7 @@ while True:
     if runtimes % 180 == 0:
         ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
         fpath = f"./data/ActuralTrade/Tick_{ymd}.xlsx"
-        file.GeneratorFromDF(TickDF, fpath)
+        file.GeneratorFromDF(GtickDF, fpath)
         logger.info(f"Generate Tick File!{ymd}")
 
     # 取得每次的snapshot
@@ -279,13 +298,10 @@ while True:
     # 用開盤5min的snapshot決定買入
     if datetime.now().strftime("%H:%M") == chkpoint and not getBuyData:
         getBuyData = True
+        # callbackListDataToDF()
         # 計算趨勢線,寫入excel中(用另一個process處理)
-        # calFocusStockTrend(TickDF)
-        try:
-            newthread = threading.Thread(target = calFocusStockTrend(TickDF))
-            newthread.start
-        except Exception as exc:
-            logger.error(f"Threding Error! {exc}")
+        calFocusStockTrend()
+ 
         
         # 依買的策略產生Buy List
         stgBuyDF = stg(stkDF).BuyStrategyFromOpenSnapDF_01(eachSnapDF)
@@ -311,7 +327,12 @@ while True:
     # 由庫存中找出己成交的股票
     newBuyDF = con(api).getTreasuryStockDF(exclude = whList)
     # 產生要賣的DF("StockID", "Buy", "UP", "DOWN")
-    BuyDF = stg(newBuyDF).genBuyWithSellPriceDF(BuyDF, gfile = True)
+    if not secondrun:
+        BuyDF = stg(newBuyDF).genBuyWithSellPriceDF(gfile = True)
+        secondrun = True
+    else:
+        if not BuyDF.empty: 
+            BuyDF = stg(newBuyDF).rebuildBuyWithSellPriceDF(BuyDF, gfile = True)
 
    # 不是空值才需要往下檢查是否要賣出
     if not BuyDF.empty:
@@ -351,3 +372,14 @@ if not GdealDF.empty:
     file.GeneratorFromDF(GdealDF, fpath)
     logger.info(f"Generate Deal File Down!")
 logger.info("End")
+
+
+
+
+
+@api.quote.on_event
+def event_callback(resp_code: int, event_code: int, info: str, event: str):
+    logger.info(f'Event code: {event_code} | Event: {event}')
+api.quote.set_event_callback(event_callback)
+
+# %%
