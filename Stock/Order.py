@@ -247,6 +247,11 @@ def quote_callback(exchange: Exchange, tick:TickSTKv1):
     ticks.append(l)
     # logger.info(f"Exchange: {exchange}, Tick: {tick}")
 
+@api.quote.on_event
+def event_callback(resp_code: int, event_code: int, info: str, event: str):
+    logger.info(f'Event code: {event_code} | Event: {event}')
+
+api.quote.set_event_callback(event_callback)
 # 1.2 取得現有庫存
 whList = tool.DFcolumnToList(con(api).getTreasuryStockDF(), "code")
 # whList = ["00885", "1301", "1904", "2002", "2330", "2353", "2616", "2705", "2823", "2883", "3186", "3258", "3704"]
@@ -287,6 +292,9 @@ while True:
         fpath = f"./data/ActuralTrade/Tick_{ymd}.xlsx"
         file.GeneratorFromDF(GtickDF, fpath)
         logger.info(f"Generate Tick File!{ymd}")
+    
+    # 把Deal及Order的call back資料寫到DF中
+    callbackListDataToDF()
 
     # 取得每次的snapshot
     eachSnapDF = con(api).getSnapshotDataByStockIDs(contracts)
@@ -322,8 +330,7 @@ while True:
         for id in cancellist:
             con(api).StockCancelOrder(id)
 
-    # 把Deal及Order的call back資料寫到DF中
-    callbackListDataToDF()
+   
     # 由庫存中找出己成交的股票
     newBuyDF = con(api).getTreasuryStockDF(exclude = whList)
     # 產生要賣的DF("StockID", "Buy", "UP", "DOWN")
@@ -377,9 +384,6 @@ logger.info("End")
 
 
 
-@api.quote.on_event
-def event_callback(resp_code: int, event_code: int, info: str, event: str):
-    logger.info(f'Event code: {event_code} | Event: {event}')
-api.quote.set_event_callback(event_callback)
+
 
 # %%
