@@ -161,16 +161,12 @@ def makeBuyAction(api:sj.Shioaji, buy:list, choose:list):
 def calFocusStockTrend():
     global GtickDF
     getTrend = []
-    pid = os.getpid() 
-    logger.info(f"Function calFocusStockTrend PID = {pid}")
     try:        
         if not GtickDF.empty:
             bkTickDF = GtickDF.copy(deep = True).sort_values(by = ["StockID", "TradeTime"]) # deep = True 才不會改到原始的DF
-            logger.info(f"由GtickDF產生bkDF")
             for stockid, oneStkDF in bkTickDF.groupby("StockID"):
-                oneStkDF.reset_index(inplace = True, drop = True)
-                logger.info(f"StockID = {stockid}, TickDF Reset index")
-                reg_up = linregress(x = oneStkDF.index, y = oneStkDF.Close)
+                # oneStkDF.reset_index(inplace = True, drop = True)
+                reg_up = linregress(x = oneStkDF.index, y = oneStkDF.Close.astype(float))
                 logger.info(f"計算reg_up by linregress")
                 up_line = reg_up.intercept + reg_up.slope * oneStkDF.index
         
