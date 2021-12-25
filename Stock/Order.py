@@ -167,15 +167,13 @@ def calFocusStockTrend():
             for stockid, oneStkDF in bkTickDF.groupby("StockID"):
                 # oneStkDF.reset_index(inplace = True, drop = True)
                 reg_up = linregress(x = oneStkDF.index, y = oneStkDF.Close.astype(float))
-                logger.info(f"計算reg_up by linregress")
                 up_line = reg_up.intercept + reg_up.slope * oneStkDF.index
         
                 oneStkDFtmp = oneStkDF[oneStkDF.Close < up_line]
                 feq = 0
-                logger.info(f"求出最下面的點")
                 while len(oneStkDFtmp) >= 5 and feq < 50:
                     feq += 1
-                    reg_new = linregress(x = oneStkDFtmp.index, y = oneStkDFtmp.Close)
+                    reg_new = linregress(x = oneStkDFtmp.index, y = oneStkDFtmp.Close.astype(float))
                     up_new = reg_new.intercept + reg_new.slope * oneStkDFtmp.index
                     oneStkDFtmp = oneStkDFtmp[oneStkDFtmp.Close < up_new]
                 oneStkDF["Low_Trend"] = reg_new.intercept + reg_new.slope * oneStkDF.index
