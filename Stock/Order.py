@@ -1,5 +1,5 @@
 # %%
-
+ 
 import pandas as pd
 import random
 import sys
@@ -122,7 +122,6 @@ def callbackListDataToDF():
         ticks.clear()
 
 
-
 def buyStocksGenerate(maxNum):
     while maxNum > 0:
         yield maxNum
@@ -216,7 +215,7 @@ api = con().ServerConnectLogin(ca = "chris")
 # 註:更換另一個帳號
 # con(api).ChangeTradeCA(ca = "lydia")
 
-# 1.1 設定回報Tick資料
+# 1.1 設定回報Tick/Event資料
 @api.on_tick_stk_v1()
 def quote_callback(exchange: Exchange, tick:TickSTKv1):
     global ticks
@@ -271,7 +270,7 @@ secondrun = False
 chkpoint = "09:05"
 closepoint = "13:25"
 cancelpoint = "10:" + str(random.choice(range(10, 30)))
-runtimes = 0
+# runtimes = 0
 # 非開盤時間要修正檢查時間
 if sim().checkSimulationTime():
     chkpoint = (datetime.now() + timedelta(minutes = 1)).strftime("%H:%M")
@@ -280,14 +279,14 @@ if sim().checkSimulationTime():
 
 while True:
     # 一小時寫一次Tick的xlsx
-    runtimes += 1
-    if runtimes % 180 == 0:
-        ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
-        fpath = f"./data/ActuralTrade/Tick_{ymd}.xlsx"
-        file.GeneratorFromDF(GtickDF, fpath)
-        logger.info(f"Generate Tick File!{ymd}")
+    # runtimes += 1
+    # if runtimes % 180 == 0:
+    #     ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
+    #     fpath = f"./data/ActuralTrade/Tick_{ymd}.xlsx"
+    #     file.GeneratorFromDF(GtickDF, fpath)
+    #     logger.info(f"Generate Tick File!{ymd}")
     
-    # 把Deal及Order的call back資料寫到DF中
+    # 把Deal/Order/Tick的call back資料寫到DF中
     callbackListDataToDF()
 
     # 取得每次的snapshot
@@ -372,6 +371,11 @@ if not GdealDF.empty:
     fpath = f"{path}/deal_{ymd}.xlsx"
     file.GeneratorFromDF(GdealDF, fpath)
     logger.info(f"Generate Deal File Down!")
+if not GtickDF.empty:
+    fpath = f"{path}/tick_{ymd}.xlsx"
+    file.GeneratorFromDF(GtickDF, fpath)
+    logger.info(f"Generate Tick File Down!")
+
 logger.info("End")
 
 

@@ -2,6 +2,7 @@
 import pandas as pd
 import time
 from datetime import date, datetime, timedelta
+from shioaji import TickSTKv1, Exchange
 from util.util import connect as con, cfg, file, strategy as stg, tool, db, indicator as ind, simulation as sim
 
 def checkPriceToSell(invDF, min_data, last_flg):
@@ -104,6 +105,8 @@ def getExcuteTime():
 
 # 先檢查資料夾是否存在..沒有就建立
 tool.checkCreateYearMonthPath()
+ticks = []
+ticksDF = pd.DataFrame()
 
 chk_sec = 20
 
@@ -113,6 +116,11 @@ api = con().ServerConnectLogin( user = "lydia")
 # 2.依策略決定下單清單
 stkDF_new = file().getLastFocusStockDF()
 stkDF = stg(stkDF_new).getFromFocusOnByStrategy()
+# 2.1 需要訂閱的股票清單
+subList = tool.DFcolumnToList(stkDF, "StockID")
+# 2.2 訂閱(Focus)
+con(api).SubscribeTickByStockList(subList)
+
 
 # 3.組合需要抓價量的Stocks
 contracts = con(api).getContractForAPI(stkDF)
@@ -121,7 +129,37 @@ R0_BuyDF = pd.DataFrame()
 R1_BuyDF = pd.DataFrame()
 resultDF = pd.DataFrame()
 
+@api.on_tick_stk_v1()
+def quote_callback(exchange: Exchange, tick:TickSTKv1):
+    global ticks
+    l = []
+    l.append(tick.code)
+    l.append(tick.datetime.strftime("%H:%M:%S.%f"))
+    l.append(tick.open)
+    # l.append(tick.avg_price)
+    l.append(tick.close)
+    l.append(tick.high)
+    l.append(tick.low)
+    # l.append(tick.amount)
+    # l.append(tick.total_amount)
+    l.append(tick.volume)
+    # l.append(tick.total_volume)
+    # l.append(tick.tick_type)
+    # l.append(tick.chg_type)
+    # l.append(tick.price_chg)
+    # l.append(tick.ptc_chg)
+    # l.append(tick.bid_side_total_vol)
+    # l.append(tick.ask_side_total_vol)
+    ticks.append(l)
+    # logger.info(f"Exchange: {exchange}, Tick: {tick}")
+
+con(api).SubscribeTickByStockList(subList)
 while True:
+    # 收集tick資料
+    if ticks != []:
+        ticksDF = ticksDF.append(pd.DataFrame(ticks, columns = ["StockID", "TradeTime", "Open", "Close", "High", "Low", "Volume"]))
+        ticks.clear()
+    # 收集snapshot資料
     secDF = con(api).getSnapshotDataByStockIDs(contracts)
     # 09:05前就只要做snapshot
     if datetime.now().strftime("%H:%M") < "09:05":
@@ -136,6 +174,11 @@ while True:
         # 下單,取買價及時間(先用5min Close當買價)
         R0_BuyDF = getBuyTimeAndBuyPrice(R0_BuyDF, secDF)
         R1_BuyDF = getBuyTimeAndBuyPrice(R1_BuyDF, secDF)
+        
+        SlopeDF = tool.calculateTrendSlope(ticksDF)
+        # 取消訂閱
+        con(api).UnsubscribeTickByStockList(subList)
+
         tool.WaitingTimeDecide(chk_sec)
         continue
 
@@ -149,8 +192,11 @@ while True:
     
     tool.WaitingTimeDecide(chk_sec)
 
+
 R0_TradeDF = getTradeResultDF(stkDF, R0_BuyDF, "R0")
 R1_TradeDF = getTradeResultDF(stkDF, R1_BuyDF, "R1")
+R0_TradeDF = R0_TradeDF.merge(SlopeDF, on = ["StockID"], how = "left")
+R1_TradeDF = R1_TradeDF.merge(SlopeDF, on = ["StockID"], how = "left")
 # 準備存檔資料
 ymd = date.today().strftime("%Y%m%d")
 trade_path = cfg().getValueByConfigFile(key = "tradepath") + f"/{ymd[0:6]}"

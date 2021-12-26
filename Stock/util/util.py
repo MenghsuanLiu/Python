@@ -9,6 +9,7 @@ import os
 import time
 import shioaji as sj
 import talib
+from scipy.stats import linregress
 from bs4 import BeautifulSoup as bs
 from datetime import datetime, date, timedelta
 
@@ -899,6 +900,35 @@ class tool:
             path = f"./data/<folder>/{ym}"
             path = path.replace("<folder>", p)
             tool.checkPathExist(path)
+
+    def calculateTrendSlope(tickDF:pd.DataFrame)->pd.DataFrame:
+        TrendDF = pd.DataFrame()
+        getTrend = []
+        if not tickDF.empty:
+            bkTickDF = tickDF.copy(deep = True).sort_values(by = ["StockID", "TradeTime"]) # deep = True 才不會改到原始的DF
+            for stockid, oneStkDF in bkTickDF.groupby("StockID"):
+                reg_up = linregress(x = oneStkDF.index, y = oneStkDF.Close.astype(float))
+                up_line = reg_up.intercept + reg_up.slope * oneStkDF.index
+                oneStkDFtmp = oneStkDF[oneStkDF.Close < up_line]
+                feq = 0
+                while len(oneStkDFtmp) >= 5 and feq < 50:
+                    feq += 1
+                    reg_new = linregress(x = oneStkDFtmp.index, y = oneStkDFtmp.Close.astype(float))
+                    up_new = reg_new.intercept + reg_new.slope * oneStkDFtmp.index
+                    oneStkDFtmp = oneStkDFtmp[oneStkDFtmp.Close < up_new]
+                oneStkDF["Low_Trend"] = reg_new.intercept + reg_new.slope * oneStkDF.index
+                if reg_up.slope >= 0:
+                    val = "+"
+                else:  
+                    val = "-" 
+                l = []
+                l.append(str(stockid))
+                l.append(str(val))
+                l.append(float(reg_up.slope))
+                l.append(float(reg_new.slope))
+                getTrend.append(l)
+            TrendDF = pd.DataFrame(getTrend, columns = ["StockID", "Trend", "SlopeOrg", "SlopeNew"])
+        return TrendDF
 
 class craw:
     def __init__(self):
