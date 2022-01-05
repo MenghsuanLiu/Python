@@ -113,22 +113,6 @@ chk_sec = 20
 # 1.連接Server,指定帳號(預設chris),使用的CA(預設None)
 api = con().ServerConnectLogin( user = "lydia")
 
-# 2.依策略決定下單清單
-stkDF_new = file().getLastFocusStockDF()
-stkDF = stg(stkDF_new).getFromFocusOnByStrategy()
-# 2.1 需要訂閱的股票清單
-subList = tool.DFcolumnToList(stkDF, "StockID")
-# 2.2 訂閱(Focus)
-con(api).SubscribeTickByStockList(subList)
-
-
-# 3.組合需要抓價量的Stocks
-contracts = con(api).getContractForAPI(stkDF)
-
-R0_BuyDF = pd.DataFrame()
-R1_BuyDF = pd.DataFrame()
-resultDF = pd.DataFrame()
-
 @api.on_tick_stk_v1()
 def quote_callback(exchange: Exchange, tick:TickSTKv1):
     global ticks
@@ -153,7 +137,24 @@ def quote_callback(exchange: Exchange, tick:TickSTKv1):
     ticks.append(l)
     # logger.info(f"Exchange: {exchange}, Tick: {tick}")
 
-con(api).SubscribeTickByStockList(subList)
+# 2.依策略決定下單清單
+stkDF_new = file().getLastFocusStockDF()
+stkDF = stg(stkDF_new).getFromFocusOnByStrategy()
+# 2.1 需要訂閱的股票清單
+subList = tool.DFcolumnToList(stkDF, "StockID")
+# 2.2 訂閱(Focus)
+con(api).SubscribeTickBidAskByStockList(subList)
+
+
+# 3.組合需要抓價量的Stocks
+contracts = con(api).getContractForAPI(stkDF)
+
+R0_BuyDF = pd.DataFrame()
+R1_BuyDF = pd.DataFrame()
+resultDF = pd.DataFrame()
+
+
+
 while True:
     # 收集tick資料
     if ticks != []:
@@ -177,7 +178,7 @@ while True:
         
         SlopeDF = tool.calculateTrendSlope(ticksDF)
         # 取消訂閱
-        con(api).UnsubscribeTickByStockList(subList)
+        con(api).UnsubscribeTickBidAskByStockList(subList)
 
         tool.WaitingTimeDecide(chk_sec)
         continue

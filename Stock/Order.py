@@ -7,7 +7,7 @@ import time
 import os
 import shioaji as sj
 import threading
-from shioaji import TickSTKv1, Exchange
+from shioaji import BidAskSTKv1, TickSTKv1, Exchange
 from datetime import datetime, timedelta
 from util.util import connect as con, file, strategy as stg, simulation as sim, tool
 from util.Logger import create_logger
@@ -16,9 +16,11 @@ from scipy.stats import linregress
 itemorder = []
 itemdeal = []
 ticks = []
+bidasks = []
 GorderDF = pd.DataFrame()
 GdealDF = pd.DataFrame()
 GtickDF = pd.DataFrame()
+GbidaskDF = pd.DataFrame()
 stgBuyDF = pd.DataFrame()
 BuyDF = pd.DataFrame()
 whDF = pd.DataFrame()
@@ -93,10 +95,9 @@ def ListToDF(item: list, func: str)->pd.DataFrame:
     return pd.DataFrame(item, columns = col)
     
 def callbackListDataToDF():
-    global GorderDF, GdealDF, GtickDF, itemorder, itemdeal, ticks
+    global GorderDF, GdealDF, GtickDF, GbidaskDF, itemorder, itemdeal, ticks
     oDF = pd.DataFrame()
     dDF = pd.DataFrame()
-    tDF = pd.DataFrame()
     ymdt = datetime.now().strftime("%Y%m%d_%H%M%S")
     if itemorder != []:
         col = ["StockID", "Action", "Price", "Qty", "OrderType", "PriceType", "CancelQty", "TradeDate", "TradeTime", "ReceiveTime"]
@@ -121,6 +122,10 @@ def callbackListDataToDF():
         GtickDF = GtickDF.append(pd.DataFrame(ticks, columns = col))
         ticks.clear()
 
+    if bidasks != []:
+        col = ["StockID", "TradeTime", "BidPrice_1", "BidPrice_2", "BidPrice_3", "BidPrice_4", "BidPrice_5", "BidVolume_1", "BidVolume_2", "BidVolume_3", "BidVolume_4", "BidVolume_5", "AskPrice_1", "AskPrice_2", "AskPrice_3", "AskPrice_4", "AskPrice_5", "AskVolume_1", "AskVolume_2", "AskVolume_3", "AskVolume_4", "AskVolume_5"]
+        GbidaskDF = GbidaskDF.append(pd.DataFrame(bidasks, columns = col))
+        bidasks.clear()
 
 def buyStocksGenerate(maxNum):
     while maxNum > 0:
@@ -176,7 +181,6 @@ def calFocusStockTrend():
                     up_new = reg_new.intercept + reg_new.slope * oneStkDFtmp.index
                     oneStkDFtmp = oneStkDFtmp[oneStkDFtmp.Close < up_new]
                 oneStkDF["Low_Trend"] = reg_new.intercept + reg_new.slope * oneStkDF.index
-                logger.info(f"斜率決定+/-")
                 if reg_up.slope >= 0:
                     val = "+"
                 else:  
@@ -240,9 +244,39 @@ def quote_callback(exchange: Exchange, tick:TickSTKv1):
     ticks.append(l)
     # logger.info(f"Exchange: {exchange}, Tick: {tick}")
 
+@api.on_bidask_stk_v1()
+def quote_callback(exchange: Exchange, bidask:BidAskSTKv1):
+    global bidasks
+    l = []
+    l.append(bidask.code)
+    l.append(bidask.datetime.strftime("%H:%M:%S.%f"))
+    l.append(bidask.bid_price[0])
+    l.append(bidask.bid_price[1])
+    l.append(bidask.bid_price[2])
+    l.append(bidask.bid_price[3])
+    l.append(bidask.bid_price[4])
+    l.append(bidask.bid_volume[0])
+    l.append(bidask.bid_volume[1])
+    l.append(bidask.bid_volume[2])
+    l.append(bidask.bid_volume[3])
+    l.append(bidask.bid_volume[4])
+    l.append(bidask.ask_price[0])
+    l.append(bidask.ask_price[1])
+    l.append(bidask.ask_price[2])
+    l.append(bidask.ask_price[3])
+    l.append(bidask.ask_price[4])
+    l.append(bidask.ask_volume[0])
+    l.append(bidask.ask_volume[1])
+    l.append(bidask.ask_volume[2])
+    l.append(bidask.ask_volume[3])
+    l.append(bidask.ask_volume[4])
+    bidasks.append(l)
+    logger.info(f"Exchange: {exchange}, BidAsk: {bidask}")
+
 @api.quote.on_event
 def event_callback(resp_code: int, event_code: int, info: str, event: str):
     logger.info(f'Event code: {event_code} | Event: {event}')
+
 
 api.quote.set_event_callback(event_callback)
 # 1.2 取得現有庫存
@@ -258,7 +292,7 @@ stkDF = stg(stkDF).getFromFocusOnByStrategy()
 # 2.1 需要訂閱的股票清單
 subList = tool.DFcolumnToList(stkDF, "StockID")
 # 2.2 訂閱(Focus)
-con(api).SubscribeTickByStockList(subList)
+con(api).SubscribeTickBidAskByStockList(subList)
 
 # 3.組合需要抓價量的Stocks(不能當沖的不放進來)
 contracts = con(api).getContractForAPI(stkDF)
@@ -278,14 +312,7 @@ if sim().checkSimulationTime():
     closepoint = (datetime.now() + timedelta(minutes = 5)).strftime("%H:%M")
 
 while True:
-    # 一小時寫一次Tick的xlsx
-    # runtimes += 1
-    # if runtimes % 180 == 0:
-    #     ymd = datetime.now().strftime("%Y%m%d_%H%M%S")
-    #     fpath = f"./data/ActuralTrade/Tick_{ymd}.xlsx"
-    #     file.GeneratorFromDF(GtickDF, fpath)
-    #     logger.info(f"Generate Tick File!{ymd}")
-    
+     
     # 把Deal/Order/Tick的call back資料寫到DF中
     callbackListDataToDF()
 
@@ -299,8 +326,7 @@ while True:
     # 用開盤5min的snapshot決定買入
     if datetime.now().strftime("%H:%M") == chkpoint and not getBuyData:
         getBuyData = True
-        # callbackListDataToDF()
-        # 計算趨勢線,寫入excel中(用另一個process處理)
+        # 計算趨勢線,寫入excel中
         calFocusStockTrend()
  
         
@@ -351,12 +377,12 @@ while True:
                 con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Sell")
                 logger.info(f"Sell {row.StockID}")
             # 取消訂閱    
-            con(api).UnsubscribeTickByStockList(subList)
+            con(api).UnsubscribeTickBidAskByStockList(subList)
             break
 
     if datetime.now().strftime("%H:%M") >= closepoint:
         # 取消訂閱
-        con(api).UnsubscribeTickByStockList(subList)
+        con(api).UnsubscribeTickBidAskByStockList(subList)
         break
 
     tool.WaitingTimeDecide(check_secs)
@@ -375,13 +401,8 @@ if not GtickDF.empty:
     fpath = f"{path}/tick_{ymd}.xlsx"
     file.GeneratorFromDF(GtickDF, fpath)
     logger.info(f"Generate Tick File Down!")
-
+if not GbidaskDF.empty:
+    fpath = f"{path}/bidask_{ymd}.xlsx"
+    file.GeneratorFromDF(GbidaskDF, fpath)
+    logger.info(f"Generate BidAsk File Down!")
 logger.info("End")
-
-
-
-
-
-
-
-# %%

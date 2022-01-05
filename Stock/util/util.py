@@ -332,14 +332,16 @@ class connect:
     def getOrderStatusDF(self):
         pass
 
-    def SubscribeTickByStockList(self, stk_lst:list):
+    def SubscribeTickBidAskByStockList(self, stk_lst:list):
         # https://sinotrade.github.io/tutor/market_data/streaming/stocks/#bidask
         for id in stk_lst:
             self.api.quote.subscribe(self.api.Contracts.Stocks[id], quote_type = "tick", version = "v1") # intraday_odd = True(盤中零股)
+            self.api.quote.subscribe(self.api.Contracts.Stocks[id], quote_type = "bidask", version = "v1") # intraday_odd = True(盤中零股)
 
-    def UnsubscribeTickByStockList(self, stk_lst:list):
+    def UnsubscribeTickBidAskByStockList(self, stk_lst:list):
         for id in stk_lst:
             self.api.quote.unsubscribe(self.api.Contracts.Stocks[id], quote_type = "tick")
+            self.api.quote.unsubscribe(self.api.Contracts.Stocks[id], quote_type = "bidask")
 
 class db:
     def __init__(self):
