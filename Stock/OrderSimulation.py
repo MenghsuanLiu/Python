@@ -143,7 +143,7 @@ stkDF = stg(stkDF_new).getFromFocusOnByStrategy()
 # 2.1 需要訂閱的股票清單
 subList = tool.DFcolumnToList(stkDF, "StockID")
 # 2.2 訂閱(Focus)
-con(api).SubscribeTickBidAskByStockList(subList)
+con(api).SubscribeTickBidAskByStockList(subList, "tick")
 
 
 # 3.組合需要抓價量的Stocks
@@ -178,7 +178,7 @@ while True:
         
         SlopeDF = tool.calculateTrendSlope(ticksDF)
         # 取消訂閱
-        con(api).UnsubscribeTickBidAskByStockList(subList)
+        con(api).UnsubscribeTickBidAskByStockList(subList, "tick")
 
         tool.WaitingTimeDecide(chk_sec)
         continue

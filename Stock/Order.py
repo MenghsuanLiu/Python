@@ -271,7 +271,7 @@ def quote_callback(exchange: Exchange, bidask:BidAskSTKv1):
     l.append(bidask.ask_volume[3])
     l.append(bidask.ask_volume[4])
     bidasks.append(l)
-    logger.info(f"Exchange: {exchange}, BidAsk: {bidask}")
+    # logger.info(f"Exchange: {exchange}, BidAsk: {bidask}")
 
 @api.quote.on_event
 def event_callback(resp_code: int, event_code: int, info: str, event: str):
@@ -292,7 +292,7 @@ stkDF = stg(stkDF).getFromFocusOnByStrategy()
 # 2.1 需要訂閱的股票清單
 subList = tool.DFcolumnToList(stkDF, "StockID")
 # 2.2 訂閱(Focus)
-con(api).SubscribeTickBidAskByStockList(subList)
+con(api).SubscribeTickBidAskByStockList(subList, "bidask")
 
 # 3.組合需要抓價量的Stocks(不能當沖的不放進來)
 contracts = con(api).getContractForAPI(stkDF)
@@ -327,7 +327,7 @@ while True:
     if datetime.now().strftime("%H:%M") == chkpoint and not getBuyData:
         getBuyData = True
         # 計算趨勢線,寫入excel中
-        calFocusStockTrend()
+        # calFocusStockTrend()
  
         
         # 依買的策略產生Buy List
@@ -377,12 +377,12 @@ while True:
                 con(api).StockNormalBuySell(stkid = id, price = "down", qty = 1, action = "Sell")
                 logger.info(f"Sell {row.StockID}")
             # 取消訂閱    
-            con(api).UnsubscribeTickBidAskByStockList(subList)
+            con(api).UnsubscribeTickBidAskByStockList(subList, "bidask")
             break
 
     if datetime.now().strftime("%H:%M") >= closepoint:
         # 取消訂閱
-        con(api).UnsubscribeTickBidAskByStockList(subList)
+        con(api).UnsubscribeTickBidAskByStockList(subList, "bidask")
         break
 
     tool.WaitingTimeDecide(check_secs)

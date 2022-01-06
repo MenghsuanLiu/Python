@@ -332,16 +332,26 @@ class connect:
     def getOrderStatusDF(self):
         pass
 
-    def SubscribeTickBidAskByStockList(self, stk_lst:list):
+    def SubscribeTickBidAskByStockList(self, stk_lst:list, qtype:str = "both"):
         # https://sinotrade.github.io/tutor/market_data/streaming/stocks/#bidask
         for id in stk_lst:
-            self.api.quote.subscribe(self.api.Contracts.Stocks[id], quote_type = "tick", version = "v1") # intraday_odd = True(盤中零股)
-            self.api.quote.subscribe(self.api.Contracts.Stocks[id], quote_type = "bidask", version = "v1") # intraday_odd = True(盤中零股)
+            if qtype == "both":
+                self.api.quote.subscribe(self.api.Contracts.Stocks[id], quote_type = "tick", version = "v1") # intraday_odd = True(盤中零股)
+                self.api.quote.subscribe(self.api.Contracts.Stocks[id], quote_type = "bidask", version = "v1") # intraday_odd = True(盤中零股)
+            if qtype == "tick":    
+                self.api.quote.subscribe(self.api.Contracts.Stocks[id], quote_type = "tick", version = "v1") # intraday_odd = True(盤中零股)
+            if qtype == "bidask":
+                self.api.quote.subscribe(self.api.Contracts.Stocks[id], quote_type = "bidask", version = "v1") # intraday_odd = True(盤中零股)
 
-    def UnsubscribeTickBidAskByStockList(self, stk_lst:list):
+    def UnsubscribeTickBidAskByStockList(self, stk_lst:list, qtype:str = "both"):
         for id in stk_lst:
-            self.api.quote.unsubscribe(self.api.Contracts.Stocks[id], quote_type = "tick")
-            self.api.quote.unsubscribe(self.api.Contracts.Stocks[id], quote_type = "bidask")
+            if qtype == "both":
+                self.api.quote.unsubscribe(self.api.Contracts.Stocks[id], quote_type = "tick")
+                self.api.quote.unsubscribe(self.api.Contracts.Stocks[id], quote_type = "bidask")
+            if qtype == "tick":
+                self.api.quote.unsubscribe(self.api.Contracts.Stocks[id], quote_type = "tick")
+            if qtype == "bidask":
+                self.api.quote.unsubscribe(self.api.Contracts.Stocks[id], quote_type = "bidask")        
 
 class db:
     def __init__(self):
