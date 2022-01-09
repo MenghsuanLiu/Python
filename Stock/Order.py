@@ -292,7 +292,7 @@ stkDF = stg(stkDF).getFromFocusOnByStrategy()
 # 2.1 需要訂閱的股票清單
 subList = tool.DFcolumnToList(stkDF, "StockID")
 # 2.2 訂閱(Focus)
-con(api).SubscribeTickBidAskByStockList(subList, "bidask")
+con(api).SubscribeTickBidAskByStockList(subList, "tick")
 
 # 3.組合需要抓價量的Stocks(不能當沖的不放進來)
 contracts = con(api).getContractForAPI(stkDF)
