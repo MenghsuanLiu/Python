@@ -1,5 +1,6 @@
 # %%
 import random
+from matplotlib.pyplot import cla
 import requests as req
 import json
 import sqlalchemy
@@ -214,7 +215,7 @@ class connect:
             return print(exc)
         return outDF
 
-    def StockNormalBuySell(self, stkid, price = "now", qty:int = 1, action:str = None):
+    def StockNormalBuySell(self, stkid, price = "now", qty:int = 1, action:str = None, lot:str = "Common"):
         # Order參數說明  action{Buy, Sell}, price_type{LMT(限價), MKT(市價), MKP(範圍市價)} p.s MKT/MKP只能搭IOC, price = 0
         #               order_type{ROD, IOC, FOK}, order_cond{Cash(現股), MarginTrading(融資), ShortSelling(融券)}
         #               order_lot{Common(整股), Fixing(定盤), Odd(盤後零股), IntradayOdd(盤中零股)}
@@ -246,7 +247,7 @@ class connect:
                                 price_type = myptype, 
                                 order_type = myotype,
                                 order_cond = "Cash",
-                                order_lot = "Common",                     
+                                order_lot = lot,                     
                                 account = self.api.stock_account
                              )
         self.api.place_order(Ctract, order)
@@ -548,6 +549,28 @@ class file:
         stkDF.StockID = stkDF.StockID.astype(str)
         return stkDF
 
+    # 取得前一個交易日的觀注股票
+    def getPreviousTransactionFocusStockDF() -> pd.DataFrame:
+        i = 0
+        matching = []
+        while True:
+            ymd = (date.today() - timedelta(days = i)).strftime("%Y%m%d")
+            # 取資料夾中的檔案List
+            file_lst = os.listdir(cfg().getValueByConfigFile(key = "dailypath") + f"/{ymd[0:6]}")
+            # 取得檔案名稱
+            fname = cfg().getValueByConfigFile(key = "focus_fname") + f"_{ymd}.xlsx"
+            # 檔名比對
+            matching = [s for s in file_lst if fname in s]
+            # 找到就離開這個Loop
+            if matching !=[]:
+                file_path = cfg().getValueByConfigFile(key = "dailypath") + f"/{ymd[0:6]}"
+                break
+            i += 1
+        outDF = pd.read_excel(f"{file_path}/{fname}")
+        outDF.StockID = outDF.StockID.astype(str)
+        return outDF
+
+        
     def GeneratorFromDF(genDF: pd.DataFrame, fname: str, ftype: str = "xlsx"):
         if ftype.lower() == "csv":
             genDF.to_csv(fname, index = False, encoding = "utf_8_sig")
@@ -682,7 +705,16 @@ class strategy:
         
         # return stop_chk_T, self.out_DF
         return self.out_DF
-        
+
+    def getBuyStockListByStrategy(self, snap_DF: pd.DataFrame)->list:
+        MergeDF = self.in_DF.filter(items = ["StockID", "StockName", "上市/上櫃", "Close"]).merge(snap_DF.filter(items = ["StockID", "Open", "High", "Close"]).rename(columns = {"Close": "snapClose"}), on = ["StockID"], how = "left")
+        MergeDF["BuyFlag"] = ""
+
+        MergeDF.loc[(MergeDF["snapClose"] < MergeDF["Close"] * 1.05), "BuyFlag"] = "X"
+        BuyDF = MergeDF.loc[MergeDF.BuyFlag == "X"]
+        stkList = tool.DFcolumnToList(BuyDF, "StockID")
+        return stkList
+
 class indicator:
     def __init__(self, inDF):
         self.DF = inDF         
@@ -1140,4 +1172,28 @@ class simulation:
         resultDF = pd.DataFrame(result, columns = ["TradeDate", "StockID", "Frequency","BuyTime", "Buy", "SellTime", "Sell"])
         resultDF["Profit"] = resultDF.Sell - resultDF.Buy
         return resultDF
-        
+
+class mytime:
+    def __init__(self) -> None:
+        self.now = datetime.now()
+        self.openTime = "09:05"
+        self.closeTime = "13:25"
+        self.cancelTime =  "10:" + str(random.choice(range(10, 50)))
+
+    def getMakeOrderTime(self) -> str:
+        # 不是開盤時間,就用現在時間+1 min
+        if simulation().checkSimulationTime():
+            self.openTime =  (self.now + timedelta(minutes = 1)).strftime("%H:%M")
+        return self.openTime
+    
+    def getOrderCancelTime(self) -> str:
+        # 不是開盤時間,就用現在時間+3 min
+        if simulation().checkSimulationTime():
+            self.cancelTime =  (self.now + timedelta(minutes = 3)).strftime("%H:%M")
+        return self.cancelTime
+
+    def getOrderCloseTime(self) -> str:
+        # 不是開盤時間,就用現在時間+5 min
+        if simulation().checkSimulationTime():
+            self.closeTime =  (self.now + timedelta(minutes = 5)).strftime("%H:%M")
+        return self.closeTime

@@ -9,6 +9,7 @@
     "hisname": "StockHistory",
     "volname": "DailyVolume",
     "resultname": "DailyReport",
+    "focus_fname": "FocusList",
     "kbarname": "DailyKbar",
     "genhtml": "",
     "tb_volume": "dailyvolume",

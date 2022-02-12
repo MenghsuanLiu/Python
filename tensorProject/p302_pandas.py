@@ -1,4 +1,5 @@
 # %%
+from cProfile import label
 from datetime import datetime
 import pandas as pd
 import numpy as np
@@ -17,7 +18,7 @@ import numpy as np
 
 # pd.Series(dict(first=100, second=44, third=None)).to_numpy(dtype = np.uint8, na_value = 0)
 
-mytable_06 = pd.DataFrame(data = dict(sno = range(0, 5), sname = ('me', 'you', 'him', 'some','other'), age = np.array([10, 30, 50, 90, 70], dtype = np.uint8)), index=['first', 'second', 'third','fourth', 'fifth'])
+mytable_06 = pd.DataFrame(data = dict(sno = range(0, 5), sname = ("me", "you", "him", "some","other"), age = np.array([10, 30, 50, 90, 70], dtype = np.uint8)), index=["first", "second", "third","fourth", "fifth"])
 
 print(f"這表格有幾欄幾列: {mytable_06.shape}")
 print(f"所有同學的名字: {mytable_06.sname.to_list()}")
@@ -28,4 +29,31 @@ print(f"找出最後一筆資料的索引名稱: {mytable_06.index[-1]}")
 print(f"最後一筆資料的內容: {mytable_06.iloc[-1].to_dict()}")
 
 mytable_06 = mytable_06.append(pd.DataFrame(data = [[5, "else", 110]], index = ["sixth"], columns = ["sno", "sname", "age"]))
+mytable_06.insert(loc = 2, column = "Gender", value = ["M", "F", "F", "M", "M", "F"], allow_duplicates = False)
+print(mytable_06)
+drop_row = mytable_06.drop(labels = ["second", "fifth"], axis = 0)
+drop_col = mytable_06.drop(labels = ["age"], axis = 1)
+print(drop_row)
+print(drop_col)
+# %%
+import pandas as pd
+import matplotlib.pyplot as plt
+rawData = pd.read_csv("Data/customer.csv")
+# print(rawData)
+rawNdarry = rawData.values
+# print(f"ndarray: {rawNdarry}")
+# print(f"Type: {rawNdarry.dtype}")
+fig = plt.figure()
+ax = fig.add_subplot()
+ax.scatter(rawData.age, rawData.income, label = "income / age")
+ax.legend(loc = "best")
+plt.show()
+# %%
+import pandas as pd
+import numpy as np
+mytable_07 = pd.DataFrame(data = dict(sno = range(0, 5), sname=("me", "you", "him", "some", "other"), gender = ["M", "F", "F", "M","F"], age = np.array([10, 30, 50, 90, 70], dtype = np.uint8)), index = ["first", "second", "third", "fourth", "fifth"])
+c = pd.Categorical(mytable_07.gender)
+type(c)
+# mytable_07.gender = pd.Categorical(mytable_07.gender).codes
+
 # %%

@@ -215,6 +215,8 @@ logger.info(f"Start PID = {pid}")
 check_secs = 20
 # 1.連接Server,指定帳號(預設chris),使用的CA(預設None)
 api = con().ServerConnectLogin(ca = "chris")
+
+
 # api = con().ServerConnectLogin(simulte = True)
 # 註:更換另一個帳號
 # con(api).ChangeTradeCA(ca = "lydia")
