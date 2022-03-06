@@ -93,7 +93,6 @@ def CallBackListToDF(last: bool = False) -> None:
 
 
     if itemdeal != []:
-
         col = ["StockID", "Action", "Price", "Qty", "OrderCond", "OrderLot","TradeDate", "TradeTime", "ReceiveTime"]
         GdealDF = GdealDF.append(pd.DataFrame(itemdeal, columns = col))
         # 準備存成File用的DF

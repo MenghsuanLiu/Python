@@ -1,5 +1,6 @@
 # %%
 import random
+from typing import NoReturn, List
 from matplotlib.pyplot import cla
 import requests as req
 import json
@@ -333,7 +334,7 @@ class connect:
     def getOrderStatusDF(self):
         pass
 
-    def SubscribeTickBidAskByStockList(self, stk_lst:list, qtype:str = "both"):
+    def SubscribeTickBidAskByStockList(self, stk_lst: List[str], qtype:str = "both") -> NoReturn:
         # https://sinotrade.github.io/tutor/market_data/streaming/stocks/#bidask
         for id in stk_lst:
             if qtype == "both":
@@ -344,7 +345,7 @@ class connect:
             if qtype == "bidask":
                 self.api.quote.subscribe(self.api.Contracts.Stocks[id], quote_type = "bidask", version = "v1") # intraday_odd = True(盤中零股)
 
-    def UnsubscribeTickBidAskByStockList(self, stk_lst:list, qtype:str = "both"):
+    def UnsubscribeTickBidAskByStockList(self, stk_lst : List[str], qtype:str = "both"):
         for id in stk_lst:
             if qtype == "both":
                 self.api.quote.unsubscribe(self.api.Contracts.Stocks[id], quote_type = "tick")
@@ -799,7 +800,7 @@ class indicator:
             outDF = outDF.append(gpDF)
         return outDF
 
-    def addMAXMINvalueToDF(self, period:list = None, fn:list = None):
+    def addMAXMINvalueToDF(self, period: List[int] = None, fn: List[int] = None):
         if period:
             self.MAXMINperiod = period
         

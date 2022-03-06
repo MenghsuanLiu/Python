@@ -1,5 +1,6 @@
 {
   "recommendations": [
-    "ms-toolsai.jupyter"
+    "ms-toolsai.jupyter",
+    "ms-python.python"
   ]
 }
