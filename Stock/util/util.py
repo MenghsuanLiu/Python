@@ -11,7 +11,7 @@ import os
 import time
 import shioaji as sj
 import talib
-from scipy.stats import linregress
+# from scipy.stats import linregress
 from bs4 import BeautifulSoup as bs
 from datetime import datetime, date, timedelta
 
@@ -199,7 +199,7 @@ class connect:
     def getKbarData(self, stkid:str = None, sdate:str = None, edate:str = None):
         if sdate:
             self.startdate = sdate
-            self.enddate = sdate
+            self.enddate = sdate 
         
         if edate:
             self.enddate = edate
