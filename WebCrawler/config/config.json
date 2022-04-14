@@ -14,6 +14,6 @@
     "webpath": "./data/html_file",
     "gen_html": "",
     "gen_xlsx":"",
-    "market": {"sii": "上市公司", "otc": "上櫃公司", "rotc": "興櫃公司", "pub": "公開發行公司"},
+    "market": {"sii": "上市", "otc": "上櫃", "rotc": "興櫃", "pub": "公開發行"},
     "industy": ["半導體", "電子工業"]
 }

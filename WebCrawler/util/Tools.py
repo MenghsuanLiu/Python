@@ -59,6 +59,7 @@ class FileProcess:
                 val = True
             return val
         except:
+            wlog.exception("message")
             return None
 
     # 把資料寫到檔案中
@@ -72,7 +73,8 @@ class FileProcess:
                 with open ( fnam, mode = "w", encoding = "UTF-8") as web_html:
                     web_html.write(self.obj.prettify())
             except:
-                wlog.info(f"Create HTML File: {fpath} Fail!!")
+                wlog.exception("message")
+                # wlog.info(f"Create HTML File: {fpath} Fail!!")
 
     # 將資料產生成檔案
     def generateDataToExcelFile(self, fun: str, period: list)-> None:
@@ -104,20 +106,28 @@ class FileProcess:
                     except:
                         text = glkey
                     header.append(text)
+            
         
         # 每月營收
         if fun.upper() == "I":
             fpath = f"{self.xlsx_path}/Revenue_{period[0]}_{period[1]}.xlsx"
-
+            header = ["日期", "市場別"]
+            for txt in self.obj.select("table > tr:nth-child(2) > th"):
+                header.append(re.sub('<br\s*?>', ' ', txt.text))
+            # 抓備註
+            header.append(self.obj.select("table > tr:nth-child(1) > th:nth-child(4)")[0].text) 
+            # BU
+            header.append("BU")
+            # 最後一個欄位是為了寫資料庫加的
+            self.data = [i[:-1] for i in self.data]
         # 產生File
-        # 轉換成DataFrame    
-        xlsxDF = pd.DataFrame(self.data, columns = header)
-            
         try:
+            # 轉換成DataFrame
+            xlsxDF = pd.DataFrame(self.data, columns = header)
             xlsxDF.to_excel(fpath, index = False)
             wlog.info(f"Create Excel File: {fpath} Success!!")
         except:
-            wlog.info(f"Create Excel File: {fpath} Fail!!")
+            wlog.exception("message")
 
 class Calcuate:
     def __init__(self) -> None:
@@ -204,9 +214,11 @@ class DB:
             cursor.execute(SQLstatement)
             RateList = [float(v[0]) for v in cursor.fetchall()]
             conn.close()
-            return round(sum(RateList) / len(RateList), 2)
+            oVal = round(sum(RateList) / len(RateList), 2)
         except:
-            return 0
+            wlog.exception("message")
+            oVal = 0
+        return oVal
 
     # 取得季 Ship Wafer Qty(PSMC抓不到就找8AEISS01的值來計算)->dict = {"StockID": [w8_qty, w12_qty]}
     def getWaferQtyByPeriod(self, fdate: date )-> dict:
@@ -233,9 +245,21 @@ class DB:
             # DataFrame to Dict
             oDict = oDF.set_index("StockID").T.to_dict("list")
         except:
-            pass 
-        
+            wlog.exception("message")
         return oDict
+
+    # 取得月 LSPF Revenue
+    def getLSPFRevenueByPeriod(self, fdate: date)-> int:
+        engine8AEISS01 = sqlalchemy.create_engine(f"{self.mssqlcon}://{self.user_1}:{self.pwd_1}@{self.dbserver_1}/{self.dbBIDC}?driver={self.dbdrive}")
+        SQLstatement8 = f"SELECT SUM(IIF( FKART NOT IN ('F2', 'L2'), LNETW * -1, LNETW)) as Revenue_8 FROM SAP.dbo.sapRevenue WHERE DATEADD(mm, DATEDIFF(mm, 0, FKDAT) , 0) = '{str(fdate)}'"
+        SQLstatement12 = f"SELECT SUM(IIF( FKART NOT IN ('F2', 'L2'), LNETW * -1, LNETW)) as Revenue_12 FROM F12SAP.dbo.sapRevenue WHERE DATEADD(mm, DATEDIFF(mm, 0, FKDAT) , 0) = '{str(fdate)}'"
+        try:
+            oDF  = pd.concat([pd.read_sql(SQLstatement8, engine8AEISS01), pd.read_sql(SQLstatement12, engine8AEISS01)], axis = 0)
+            oVal = int(round(oDF.Revenue_8.values[0] + oDF.Revenue_12.values[0], -3)/1000)
+        except:
+            oVal = 0
+            wlog.exception("message")
+        return oVal
 
     # 更新Tbale
     def updateDataToTable(self, fdate: date, tbname: str)-> None:
@@ -244,34 +268,52 @@ class DB:
         if not DBupdate:
             wlog.info(f"Config Setting: UpDate DB is False!!")
             return
-        # # 檢查進來的資料
-        # if self.inputdata == None or self.inputdata == []:
-        #     wlog.info(f"No Data Input to UpDate DB!!")
-        #     return
-        
-        conn = pymssql.connect( server = self.dbserver_2, user = self.user_2, password = self.pwd_2, database = self.dbBIDC)
-        cursor = conn.cursor(as_dict = False)
-
-        if tbname == "BIDC.dbo.mopsFinancialByCompany":
-            # Del Exist Data
-            try:
-                cursor.execute(f"DELETE FROM {tbname} WHERE YQ_Date ='{str(fdate)}'")
-                conn.commit()
-            except:
-                wlog.exception("message")
-            # Insert Data
-            insertData = [tuple(lst) for lst in self.inputdata]
-            try:
-                # 公司, 日期, PSMC平均匯率, 8"數量, 12"數量, 總資產, 總負債, 流通在外張數, 營業收入, 營業毛利, 營業費用, 營業費用(其他), 營業利益, 營業外收支, 稅後純益(損), 所得稅費用, 稅後淨利, EPS, RD費用, 稅前淨利, 利息費用, 折舊費用, 攤銷費用
-                cursor.executemany("INSERT INTO BIDC.dbo.mopsFinancialByCompany (StockID, YQ_Date, PSMC_ExRate, WaferQty_8, WaferQty_12, Assets, Liabilities, OrdinaryShare, Oper_Revenue, GP_Oper, Oper_Expenses, NetOtherIncome, NetOperIncome, nonOperIncome, PF_AttrOwners, Tax_Expense, Profit, EPS, RD_Expense, PF_BeforeTax, Inter_Expense, DP_Expense, Amor_Expense) VALUES (%s, %s, %s, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %s, %d, %d, %d, %d, %d)", insertData)
-                conn.commit()
-            except:
-                wlog.exception("message")
-            conn.close()
+        # 檢查進來的資料
+        if self.inputdata == None or self.inputdata == []:
+            wlog.info(f"No Data Input to UpDate DB!!")
             return
         
+        # 連線資訊
+        conn = pymssql.connect( server = self.dbserver_2, user = self.user_2, password = self.pwd_2, database = self.dbBIDC)
+        cursor = conn.cursor(as_dict = False)
+        # 針對不同Table做處理
         if tbname == "BIDC.dbo.mopsFinancialByCompany":
+            delSQL = f"DELETE FROM {tbname} WHERE YQ_Date ='{str(fdate)}'"
+            # 公司, 日期, PSMC平均匯率, 8"數量, 12"數量, 總資產, 總負債, 流通在外張數, 營業收入, 營業毛利, 營業費用, 營業費用(其他), 營業利益, 營業外收支, 稅後純益(損), 所得稅費用, 稅後淨利, EPS, RD費用, 稅前淨利, 利息費用, 折舊費用, 攤銷費用
+            insertSQL = "INSERT INTO BIDC.dbo.mopsFinancialByCompany (StockID, YQ_Date, PSMC_ExRate, WaferQty_8, WaferQty_12, Assets, Liabilities, OrdinaryShare, Oper_Revenue, GP_Oper, Oper_Expenses, NetOtherIncome, NetOperIncome, nonOperIncome, PF_AttrOwners, Tax_Expense, Profit, EPS, RD_Expense, PF_BeforeTax, Inter_Expense, DP_Expense, Amor_Expense) VALUES (%s, %s, %s, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %d, %s, %d, %d, %d, %d, %d)"
+
+        if tbname == "BIDC.dbo.mopsFinancialByCompany":
+            delSQL = f"DELETE FROM {tbname} WHERE YearMonth ='{str(fdate)}'"
+            # YearMonth, BU, StockID, Revenue, Remark
+            insertSQL = "INSERT INTO BIDC.dbo.mopsRevenueByCompany (YearMonth, BU, StockID, Revenue, Remark) VALUES (%s, %s, %s, %d, %s)"
+            # 取出需要的欄位
+            # 日期/市場別/公司代號/公司名稱/當月營收/上月營收/去年當月營收/上月比較增減(%)/去年同月增減(%)/當月累計營收/去年累計營收/前期比較增減(%)/備註/BU/Revenue
+            self.inputdata = [[i[0], i[-2], i[2], i[-1], i[-3]] for i in self.inputdata]
+            
+        
+        if tbname == "BIDC.dbo.mopsStockCompanyInfo":
+            engineRAOICD01 = sqlalchemy.create_engine(f"{self.mssqlcon}://{self.user_2}:{self.pwd_2}@{self.dbserver_2}/{self.dbBIDC}?driver={self.dbdrive}")
+            quarySQL = f"SELECT StockID, StockName, Market, Industry, EnShowName FROM {tbname}"
+            companyDF = pd.read_sql(sql = quarySQL, con = engineRAOICD01)
             pass
+        
+        # Nested List Data To Tuples
+        insertData = [tuple(lst) for lst in self.inputdata]
+        # Del Exist Data & Insert New Data
+        try:
+            cursor.execute(delSQL)
+            conn.commit()
+            cursor.executemany(insertSQL, insertData)
+            conn.commit()
+            wlog.info(f"Update {tbname} Success!!")
+        except:
+            wlog.exception("message")
+        
+        conn.close()
+
+
+
+
 
 class Web:
     def __init__(self, obj: bs = None) -> None:
@@ -309,8 +351,11 @@ class Web:
             fname = f"{self.htmlfpath}/Income_{inLst[2]}_{yearmonth}.html"
             checkstr = "查無資料"
 
-        # 處理網址
-        urlwithhead = req.get(url, headers = self.head, proxies = self.pxy)
+        # 處理網址(如果可以不用proxy就不要用)
+        try:
+            urlwithhead = req.get(url, headers = self.head)
+        except:
+            urlwithhead = req.get(url, headers = self.head, proxies = self.pxy)
         urlwithhead.encoding = self.encoding
 
         # 檢查網址是否存在, 產生要output的BeautifulSoup物件
@@ -335,38 +380,63 @@ class Web:
         if inLst[2] == None:
             genFile = False
 
-        try:
-            # 基本上數字抓"季財報",關鍵字抓"月營收"
-            if isinstance(findTB, int):
+       
+        # 檢查進來要抓的指令的Type,基本上數字抓"季財報",關鍵字抓"月營收"
+        if isinstance(findTB, int):
+            try:
                 tbObj = self.obj.find_all("table")[findTB]
                 fname = self.htmlfpath + "/tb_" + tbObj.find_all("th")[0].find("span", class_ ="en").text.strip().replace(" ","") + f"_{inLst[2]}_{str(inLst[0])}Q{str(inLst[1])}.html"
-            
-            if isinstance(findTB, str):
+            except:
+                wlog.exception("message")
+
+        if isinstance(findTB, str):
+            try:
                 tbObj = self.obj.find("th", text = re.compile(".*" + findTB)).find_parent("table")
                 fname = f"{self.htmlfpath}/tb_{findTB}_{inLst[2]}_{inLst[0]}_{inLst[1]}.html"
-            
-            if isinstance(findTB, list):
-                for industy in findTB:
+            except:
+                wlog.exception("message")
+
+        if isinstance(findTB, list):
+            for industy in findTB:
+                try:                        
                     tbObj = self.obj.find("th", text = re.compile(".*" + industy)).find_parent("table")
-                    if tbObj != None:
-                        fname = f"{self.htmlfpath}/tb_{inLst[2]}_{inLst[0]}_{inLst[1]}_{industy}.html"
-                        # 有抓到值就離開了..不然後面會再更新掉tbObj為空的
-                        break
-        except:
-            return None
+                    fname = f"{self.htmlfpath}/tb_{inLst[2]}_{inLst[0]}_{inLst[1]}_{industy}.html"
+                    # 有抓到值就離開了..不然後面會再更新掉tbObj為空的
+                    break
+                except:
+                    wlog.exception("message")
+                    continue
+            
         
         if genFile:
-             FileProcess(tbObj).generateBSobjectToFile(fpath = self.htmlfpath, fnam = fname)
+            FileProcess(tbObj).generateBSobjectToFile(fpath = self.htmlfpath, fnam = fname)
 
         return tbObj
         
     # 由Table Object取得值
-    def getItemValue(self, key: str)-> any:
-        try:
-            outVal = self.obj.find("td", text = key).find_parent("tr").find_all("td")[2].text.strip().replace(",", "").replace("(", "-").replace(")", "")
-        except:
-            outVal = 0
-        
+    def getItemValue(self, key: any, fun: str)-> any:
+        # 每季財報
+        if fun.upper() == "F":
+            try:
+                outVal = self.obj.find("td", text = str(key)).find_parent("tr").find_all("td")[2].text.strip().replace(",", "").replace("(", "-").replace(")", "")
+            except:
+                outVal = 0
+
+        # 每月營收
+        if fun.upper() == "I":
+            try:
+                # 文字的欄位
+                if int(key) in (1, 2, 11):
+                    outVal = str(self.obj.select(f"td:nth-child({key})")[0].text.strip().replace("-", ""))
+                # 有小數的欄位
+                elif int(key) in (6, 7, 10):
+                    outVal = float(self.obj.select(f"td:nth-child({key})")[0].text.strip())
+                # 數值欄位(網頁上以千元為單位)
+                else:
+                    outVal = int(self.obj.select(f"td:nth-child({key})")[0].text.strip().replace(",", ""))
+            except:
+                outVal = 0
+
         return outVal
 
     # 取得當年度Income的累加
@@ -399,7 +469,7 @@ class Web:
                     # 如果沒有要產生檔案objLst進去沒有用
                     tbObj = Web(bsObj).getTBobject(inLst = objLst, findTB = 1)
                     for glkey in self.incomeGL:
-                        val = Web(tbObj).getItemValue(key = glkey)
+                        val = Web(tbObj).getItemValue(key = glkey, fun = "F")
                         dataLst.append(val)
                 iData.append(dataLst)
             time.sleep(10)
@@ -451,7 +521,7 @@ class Web:
                     tbObj = Web(bsObj).getTBobject(inLst = objLst, findTB = 2)
                     dataLst.append(stkID)
                     for glkey in self.cashflowGL:
-                        val = Web(tbObj).getItemValue(key = glkey)
+                        val = Web(tbObj).getItemValue(key = glkey, fun = "F")
                         dataLst.append(val)
                     iData.append(dataLst)
                     break

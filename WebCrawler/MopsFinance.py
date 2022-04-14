@@ -58,20 +58,20 @@ if __name__ == "__main__":
 
         ## 2.2 總資產(1XXX) / 總負債(2XXX) / 普通股股本(3110)
         for glkey in G0Lst:
-            val = int(Web(tbObj_Balance).getItemValue(key = glkey)) * 1000
+            val = int(Web(tbObj_Balance).getItemValue(key = glkey, fun = "F")) * 1000
             itemLst.append(val)
 
         ## 2.3 營業收入(4000) / 營業毛利(5950) / 營業費用(6000) / 其他收益(6500) / 營業利益(6900) / 營業外收支(7000) / 母公司業主(8610) / 所得稅費用(7950)
         ##     稅後淨利(8200) / 稀釋每股盈餘(9850) / 研究發展費用(6300)
         for glkey in G1Lst:
             if glkey == "9750":
-                val = float(Web(tbObj_Income).getItemValue(key = glkey)) - float(inComeDict[stkID][glkey])
+                val = float(Web(tbObj_Income).getItemValue(key = glkey, fun = "F")) - float(inComeDict[stkID][glkey])
             else:
-                val = (int(Web(tbObj_Income).getItemValue(key = glkey)) - int(inComeDict[stkID][glkey])) * 1000
+                val = (int(Web(tbObj_Income).getItemValue(key = glkey, fun = "F")) - int(inComeDict[stkID][glkey])) * 1000
             itemLst.append(val)
         ## 2.4 稅前淨利(A10000) / 利息費用(A20900) / 折舊費用(A20100) / 攤銷費用(A20200)
         for glkey in G2Lst:
-            val = (int(Web(tbObj_CashFlows).getItemValue(key = glkey)) - int(cashFlowDict[stkID][glkey])) * 1000
+            val = (int(Web(tbObj_CashFlows).getItemValue(key = glkey, fun = "F")) - int(cashFlowDict[stkID][glkey])) * 1000
             itemLst.append(val)
         # 3.收集所有的Item產生[[],[]...]
         ItemData.append(itemLst)
