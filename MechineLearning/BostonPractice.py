@@ -1,5 +1,6 @@
 # %%
 # from sklearn import datasets
+from asyncore import read
 import sklearn.datasets
 import pandas as pd
 import numpy as np
@@ -21,5 +22,11 @@ if __name__ == '__main__':
     BostonDataSetTrain = pd.read_csv("./Data/BostonHousePriceTrain.csv")
     BostonDataSetTest = pd.read_csv("./Data/BostonHousePriceTest.csv")
 
+    # skew計算偏度(愈接近0愈接近常態分佈)
+    scipy.stats.skew(BostonDataSetTrain.SalePrice)
+    plt.hist(BostonDataSetTrain.SalePrice)
+
+    scipy.stats.skew(np.log1p(BostonDataSetTrain.SalePrice))
+    plt.hist(np.log1p(BostonDataSetTrain.SalePrice))
 
 # %%
