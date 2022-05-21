@@ -2,5 +2,8 @@
   "jupyter.jupyterServerType": "local",
   "jupyter.jupyterCommandLineArguments": [
   
-  ]
+  ],
+  "workbench.startupEditor": "newUntitledFile",
+  "editor.fontFamily": "'Cascadia Code', Consolas, 'Courier New', monospace",
+  "editor.fontLigatures": true
 }

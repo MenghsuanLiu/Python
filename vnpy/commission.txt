@@ -1,0 +1,1 @@
+self.commission += min(max(trade.volume * size * rate, 1), turnover * 0.01)

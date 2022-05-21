@@ -1,0 +1,24 @@
+
+# Step 1
+# Search: price = round_to(price, self.pricetick)
+
+if callable(self.pricetick):
+    price = round_to(price, self.pricetick(price))
+else:
+    price = round_to(price, self.pricetick)
+
+
+# Step 2
+# Search: self.end_pos += pos_change
+
+if callable(slippage):
+    slippage = slippage(trade.price)
+
+
+# Step 3
+# Search: self.commission +=
+
+if callable(rate):
+    self.commission += rate(cost=trade.price, multiplier=size, qty=trade.volume, direction=trade.direction)
+else:
+    self.commission += min(max(trade.volume * size * rate, 1), turnover * 0.01)

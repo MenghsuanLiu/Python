@@ -196,7 +196,7 @@ class connect:
         minDF.StockID = minDF.StockID.astype(str)
         return minDF
 
-    def getKbarData(self, stkid:str = None, sdate:str = None, edate:str = None):
+    def getKbarData(self, stkid:str = None, sdate:str = None, edate:str = None)->pd.DataFrame:
         if sdate:
             self.startdate = sdate
             self.enddate = sdate 

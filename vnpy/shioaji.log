@@ -1,0 +1,1 @@
+[E 2022-05-15 21:19:17,054 d:\PythonVenv\vnpy_37\lib\site-packages\shioaji\utils.py:43:raise_resp_error] {'status': {'status_code': 400}, 'response': {'token': '', 'accounts': [], 'detail': 'Incorrect userid or password', 'ip_address': '60.250.206.5', 'client_name': '', 'contract_download': False, 'web_token': ''}}
