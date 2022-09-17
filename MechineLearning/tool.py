@@ -1,6 +1,7 @@
+# %%
 import pymysql
 import pandas as pd
-
+# %%
 class db:
     def mySQLconn(dbname):
         db_usr = "root"
@@ -9,4 +10,4 @@ class db:
 
     def readDataFromDBtoDF(tbfullname):
         db_con = db.mySQLconn(tbfullname.split(".")[0], "read")
-        return pd.read_sql(f"SELECT * FROM {tbfullname}", con = db_con)
+        return pd.read_sql(f"SELECT * FROM {tbfullname}", con = db_con) 
