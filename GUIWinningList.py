@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from datetime import date
 from dateutil.relativedelta import relativedelta
-# import pyrfc as rfc
+import pyrfc as rfc
 
 
 # 計算年月值(網頁參數)baseday=>基準日, step=>-1往前一個單位
@@ -50,23 +50,23 @@ if __name__ == "__main__":
     # %%
 
 
-#     conn = rfc.Connection(user = "MISSD", passwd = "test2018", ashost = "172.20.97.81", sysnr = "00", client = "300")
-#     chk_exist = bool(conn.call("ZRFC_GET_GUI_WINNING_LIST", I_GGJAH = "2022", I_GMONA = "10").get("E_EXIST"))
-#     if chk_exist:
-#         print("資料己存在!!!")
-#         conn.close()
-#         exit()
+    conn = rfc.Connection(user = "MISSD", passwd = "test2018", ashost = "172.20.97.81", sysnr = "00", client = "300")
+    chk_exist = bool(conn.call("ZRFC_GET_GUI_WINNING_LIST", I_GGJAH = "2022", I_GMONA = "10").get("E_EXIST"))
+    if chk_exist:
+        print("資料己存在!!!")
+        conn.close()
+        exit()
 
 
 
 
 
     
-#     a = [{"GGJAH": "2022", "GMONA": "08", "RECOD": "1", "PRTYP": "T", "PINZO": "11174120", "PZAMT": "10000000", "WAERK": "TWD"},
-#          {"GGJAH": "2022", "GMONA": "08", "RECOD": "2", "PRTYP": "S", "PINZO": "59276913", "PZAMT": "2000000", "WAERK": "TWD"}]
-#     result = conn.call("ZRFC_GET_GUI_WINNING_LIST", I_GGJAH = "2022", I_GMONA = "10", T_DATA = a)
-#     print(result)
-#     conn.close()
+    a = [{"GGJAH": "2022", "GMONA": "08", "RECOD": "1", "PRTYP": "T", "PINZO": "11174120", "PZAMT": "10000000", "WAERK": "TWD"},
+         {"GGJAH": "2022", "GMONA": "08", "RECOD": "2", "PRTYP": "S", "PINZO": "59276913", "PZAMT": "2000000", "WAERK": "TWD"}]
+    result = conn.call("ZRFC_GET_GUI_WINNING_LIST", I_GGJAH = "2022", I_GMONA = "10", T_DATA = a)
+    print(result)
+    conn.close()
 
 
     
