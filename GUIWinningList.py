@@ -5,6 +5,9 @@ import numpy as np
 import time
 from datetime import date
 from dateutil.relativedelta import relativedelta
+# import sys
+# import traceback
+import logging
 # import pyrfc as rfc
 
 
@@ -29,8 +32,11 @@ def calYearMonthWhichIsEven(baseday: date = date.today(), step: int = 0, ce: boo
 
 
 if __name__ == "__main__":
+    logging.basicConfig(filename = 'D:\\GUIwin.log', level = logging.DEBUG, 
+                        format='%(asctime)s %(levelname)s %(name)s %(message)s')
+    logger = logging.getLogger(__name__)
     map_dict = {"super": "T", "spc": "S", "first": "1", "second": "2", "third": "3", "fourth": "4", "fifth": "5", "sixth": "6"}
-    setp_val = -2
+    setp_val = -1
     wait = 0
 
 
@@ -80,7 +86,17 @@ if __name__ == "__main__":
             df_update = df_update.drop(list(df_update.filter(regex = "pizname")), axis=1).sort_values(by = "PRTYP").reset_index(drop=True)
             df_update = df_update.astype(str)
             break
-        except:
+        except Exception as e:
+            logger.error(e)
+            # error_class = e.__class__.__name__ #取得錯誤類型
+            # detail = e.args[0] #取得詳細內容
+            # cl, exc, tb = sys.exc_info() #取得Call Stack
+            # lastCallStack = traceback.extract_tb(tb)[-1] #取得Call Stack的最後一筆資料
+            # fileName = lastCallStack[0] #取得發生的檔案名稱
+            # lineNum = lastCallStack[1] #取得發生的行號
+            # funcName = lastCallStack[2] #取得發生的函數名稱
+            # errMsg = "File \"{}\", line {}, in {}: [{}] {}".format(fileName, lineNum, funcName, error_class, detail)
+            
             wait += 10
             print(f"下次執行時間為{wait}秒後~~~")
             time.sleep(wait)
