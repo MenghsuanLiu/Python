@@ -24,4 +24,4 @@ Ex: pip install -r requirements.txt
 pip list --outdated
 
 # 更新所有套件到最新版
-pip freeze | %{$_.split('==')[0]} | %{pip install --upgrade $_}
+pip freeze | %{$_.split('==')[0]} | %{pip install --upgrade $\_}
