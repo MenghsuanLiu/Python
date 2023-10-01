@@ -9,8 +9,8 @@ from dateutil.relativedelta import relativedelta
 # import traceback
 import logging
 # import pyrfc as rfc
-
-
+# 
+# %%
 # 計算年月值(網頁參數)baseday=>基準日, step=>-1往前一個單位
 def calYearMonthWhichIsEven(baseday: date = date.today(), step: int = 0, ce: bool = True)-> None:
     
