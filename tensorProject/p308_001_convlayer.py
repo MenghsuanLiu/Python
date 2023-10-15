@@ -7,6 +7,7 @@ from Library.p307_001_mnistData import default_dim, dataProvisioning
 
 if __name__ == "__main__":
     default_dim_shape = (default_dim, default_dim, 1)
+
     # model
     modelS = tf.keras.Sequential()
     # inputLayer
@@ -22,7 +23,7 @@ if __name__ == "__main__":
     pLayer2 = tf.keras.layers.MaxPooling2D(pool_size = (2, 2))
 
     # convDropoutLayer
-    convdLayer = tf.keras.layers.Dropout(rate = 0.5)
+    convdLayer = tf.keras.layers.Dropout(rate = 0.5) 
 
     # flattenLayer
     fLayer = tf.keras.layers.Flatten()
@@ -65,7 +66,7 @@ if __name__ == "__main__":
     test_images = tf.reshape(X_test, shape = (X_test.shape[0],) + default_dim_shape)
 
     tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir = "./Log", histogram_freq = 1, update_freq = "batch")
-
+# %%
     modelS.fit(train_images, y_train, epochs = default_epoch, callbacks = [tensorboard_callback] )
 
     eval = modelS.evaluate(test_images, y_test, verbose = 2)

@@ -31,3 +31,4 @@ def imageRendering(imageRow : np.ndarray, value : int) -> NoReturn:
     k = cv2.waitKey()
     cv2.destroyAllWindows()
     return None
+# %%
