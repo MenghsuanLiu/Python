@@ -352,7 +352,7 @@ class Web:
             checkstr = "查無資料"
 
         # 處理網址(如果可以不用proxy就不要用)
-        try:
+        try:   
             urlwithhead = req.get(url, headers = self.head)
         except:
             urlwithhead = req.get(url, headers = self.head, proxies = self.pxy)
@@ -380,7 +380,7 @@ class Web:
         if inLst[2] == None:
             genFile = False
 
-       
+
         # 檢查進來要抓的指令的Type,基本上數字抓"季財報",關鍵字抓"月營收"
         if isinstance(findTB, int):
             try:
