@@ -37,7 +37,7 @@ def generate_barcode():
         
         if brtype == "d":
             # 將資料編碼為 Data Matrix 條形碼
-            encoded = encode(data.encode("utf8"), size = '40x40')
+            encoded = encode(data.encode("utf8"), size = f"{size}x{size}")
             img = Image.frombytes('RGB', (encoded.width, encoded.height), encoded.pixels)  
             img.save("./Python/BarCodeGenerator/dmcode.png")
             return send_file('dmcode.png')
