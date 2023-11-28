@@ -1,0 +1,6 @@
+2023-11-28 21:39:20,830 INFO __main__ ~~~~~~~Program started~~~~~~~
+2023-11-28 21:40:30,908 INFO __main__ ~~~~~~~Program started~~~~~~~
+2023-11-28 21:40:30,910 INFO __main__ SAP連線資訊:{'uname': 'PSMCERP', 'pwd': 'SAP#MAX0', 'host': '172.16.6.232', 'sysnr': '00', 'client': '800'}
+2023-11-28 21:40:30,910 INFO __main__ 取得的執行年月為:2023,10
+2023-11-28 21:45:33,256 INFO __main__ ~~~~~~~Program started~~~~~~~
+2023-11-28 21:45:33,257 INFO __main__ SAP連線資訊(PRD):{'uname': 'PSMCERP', 'pwd': 'SAP#MAX0', 'host': '172.16.6.232', 'sysnr': '00', 'client': '800'}

@@ -1,0 +1,8 @@
+{
+    "DEV": {"uname": "MISSD", "pwd": "test2018", "host": "172.20.97.81", "sysnr": "00", "client": "300"},
+    "PRD": {"uname": "PSMCERP", "pwd": "SAP#MAX0", "host": "172.16.6.232", "sysnr": "00", "client": "800"},
+    "winmap":{"super": "T", "spc": "S", "first": "1", "second": "2", "third": "3", "fourth": "4", "fifth": "5", "sixth": "6"},
+    "head": {"Content-Type": "application/x-www-form-urlencoded"},
+    "url": "https://api.einvoice.nat.gov.tw/PB2CAPIVAN/invapp/InvApp",
+    "parameter": {"version": "0.2", "action": "QryWinningList", "appID": "EINV7201706312375", "UUID": "https://github.com/jasonlamkk/OpenUDID.Net"}
+}
