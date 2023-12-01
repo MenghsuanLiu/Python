@@ -4,5 +4,6 @@
     "winmap":{"super": "T", "spc": "S", "first": "1", "second": "2", "third": "3", "fourth": "4", "fifth": "5", "sixth": "6"},
     "head": {"Content-Type": "application/x-www-form-urlencoded"},
     "url": "https://api.einvoice.nat.gov.tw/PB2CAPIVAN/invapp/InvApp",
-    "parameter": {"version": "0.2", "action": "QryWinningList", "appID": "EINV7201706312375", "UUID": "https://github.com/jasonlamkk/OpenUDID.Net"}
+    "parameter": {"version": "0.2", "action": "QryWinningList", "appID": "EINV7201706312375", "uuid": "https://github.com/jasonlamkk/OpenUDID.Net"},
+    "parameterbk": {"version": "0.2", "action": "QryWinningList", "appID": "EINV7201706312375"}
 }
