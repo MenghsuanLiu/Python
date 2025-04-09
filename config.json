@@ -1,0 +1,19 @@
+{
+    "db_r": "sap_user",
+    "db_w": "owner_sap",
+    "fc_industy": ["半導體業", "電子工業"],
+    "fc_com": ["2330", "2303", "2408", "2344", "2337", "5347", "6770"],
+    "gen_xlsx": "",
+    "update_db": "X",
+    "revenue": {
+                "上市":     "https://openapi.twse.com.tw/v1/opendata/t187ap05_L",
+                "公開發行": "https://openapi.twse.com.tw/v1/opendata/t187ap05_P",
+                "興櫃":     "https://www.tpex.org.tw/openapi/v1/t187ap05_R",
+                "上櫃":     "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap05_O"
+    },
+    "finance": {
+                "上市":   ["https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ci", "https://openapi.twse.com.tw/v1/opendata/t187ap07_L_ci"],
+                "上櫃":   ["https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap06_O_ciA", "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap07_O_ci"]
+    }
+    
+}
