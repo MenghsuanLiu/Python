@@ -48,6 +48,19 @@ class ExcelUploadWindow:
         # 建立表格框架
         self.table_frame = ttk.Frame(self.main_frame)
         self.table_frame.pack(fill="both", expand=True)
+        
+        # 新增表格操作按鈕框架
+        table_buttons_frame = ttk.Frame(self.table_frame)
+        table_buttons_frame.pack(fill="x", pady=5)
+        
+        # 建立按鈕並設定為禁用狀態
+        self.add_row_btn = ttk.Button(table_buttons_frame, text="新增列", 
+                                     command=self.add_row, state="disabled")
+        self.add_row_btn.pack(side="left", padx=5)
+        
+        self.del_row_btn = ttk.Button(table_buttons_frame, text="刪除列", 
+                                     command=self.delete_row, state="disabled")
+        self.del_row_btn.pack(side="left", padx=5)
 
         # 建立 Treeview 用於顯示數據
         self.tree = ttk.Treeview(self.table_frame)
@@ -113,6 +126,11 @@ class ExcelUploadWindow:
         # 恢復唯讀狀態
         self.message_text.config(state="disabled")
 
+    def update_button_states(self, enable=True):
+        state = "normal" if enable else "disabled"
+        self.add_row_btn.configure(state=state)
+        self.del_row_btn.configure(state=state)
+
     def upload_excel(self):
         try:
             file_path = filedialog.askopenfilename(
@@ -121,9 +139,11 @@ class ExcelUploadWindow:
             if file_path:
                 self.df = pd.read_excel(file_path)
                 self.update_table()
+                self.update_button_states(True)  # 啟用按鈕
                 self.show_message("Excel 檔案上傳成功！")
         except Exception as e:
             self.show_message(f"上傳失敗：{str(e)}", "error")
+            self.update_button_states(False)  # 確保按鈕保持禁用
 
     def update_table(self):
         # 清空現有表格
@@ -278,7 +298,11 @@ class ExcelUploadWindow:
             # 切換至登入者帳號
             api.set_default_account(account=accounts[target_account_index])
             self.show_message("登入成功！")
-
+            self.show_message(api.stock_account)
+            self.show_message(self.user_id)
+            self.show_message(self.ca_path)
+            # api.logout()
+            # return
             # 處理每一筆股票下單
             for _, row in self.df.iterrows():
                 stock_id = str(row['股號'])
@@ -299,13 +323,12 @@ class ExcelUploadWindow:
                     price = 0
                     order_price_type = "MKT"
                 else:
-                    self.show_message(f"股票 {stock_id} 價格類型錯誤: {price_type}", "error")
-                    continue
+                    price = float(price_type)
 
                 # 建立訂單資料
                 order = api.Order(
                     price=price,
-                    quantity=float(quantity),
+                    quantity=quantity,
                     action="Buy",
                     price_type=order_price_type,
                     order_type="ROD",
@@ -315,7 +338,10 @@ class ExcelUploadWindow:
                 
                 # 下單
                 trade = api.place_order(contract, order)
-                self.show_message(f"股票 {stock_id} 下單成功，委託價: {price}，委託書號: {trade.order.ordno}, {trade.order.seqno}")
+                if trade.status.status_code == "0":
+                    self.show_message(f"股票 {stock_id} 下單成功，委託價: {price}，委託書號: {trade.order.ordno}，網路單號: {trade.order.seqno}，狀態: {trade.status.msg}")
+                else:
+                    self.show_message(f"股票 {stock_id} 下單失敗，委託價: {price}，原因: {trade.status.msg}")
                 
             api.logout()
 
@@ -325,6 +351,36 @@ class ExcelUploadWindow:
                 api.logout()
             except:
                 pass
+
+    def add_row(self):
+        # 新增空白列
+        empty_row = [""] * len(self.tree["columns"])
+        self.tree.insert("", "end", values=empty_row)
+        self.save_table_to_df()
+
+    def delete_row(self):
+        # 獲取選中的項目
+        selected_items = self.tree.selection()
+        if not selected_items:
+            self.show_message("請先選擇要刪除的列", "warning")
+            return
+            
+        # 刪除選中的列
+        for item in selected_items:
+            self.tree.delete(item)
+        self.save_table_to_df()
+        self.show_message("已刪除選中的列")
+
+    def save_table_to_df(self):
+        # 將表格數據保存到DataFrame
+        data = []
+        for item in self.tree.get_children():
+            data.append(self.tree.item(item)["values"])
+        
+        if data:  # 確保有數據
+            self.df = pd.DataFrame(data, columns=self.tree["columns"])
+        else:
+            self.df = None
 
     def run(self):
         self.root.mainloop()
