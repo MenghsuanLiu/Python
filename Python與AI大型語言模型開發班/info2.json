@@ -1,0 +1,73 @@
+{
+    "people": [
+        {
+            "firstName": "Jane",
+            "lastName": "Doe",
+            "hobbies": ["running", "singing"],
+            "age": 35,
+            "children": [
+                {
+                    "firstName": "Alice",
+                    "toy": "Teddy bear",
+                    "age": 6
+                },
+                {
+                    "firstName": "Bob",
+                    "toy": "Megatron",
+                    "age": 8
+                }
+            ]
+        },
+        {
+            "firstName": "Edward",
+            "lastName": "Stark",
+            "hobbies": ["running", "singing"],
+            "age": 25,
+            "children": [
+                {
+                    "firstName": "Jon Snow",
+                    "toy": "car",
+                    "age": 15
+                },
+                {
+                    "firstName": "Rob Stark",
+                    "toy": "Optimus Prime",
+                    "age": 20
+                },
+                {
+                    "firstName": "Arya Stark",
+                    "toy": "Needle",
+                    "age": 12
+                },
+                {
+                    "firstName": "Sansa Stark",
+                    "toy": "Flowers",
+                    "age": 15
+                }
+            ]
+        },
+        {
+            "firstName": "Stephen",
+            "lastName": "Maximo",
+            "hobbies": ["running", "singing"],
+            "age": 28,
+            "children": [
+                {
+                    "firstName": "James",
+                    "toy": "Shark",
+                    "age": 10
+                },
+                {
+                    "firstName": "Jessica",
+                    "toy": "water gun",
+                    "age": 7
+                },
+                {
+                    "firstName": "Amy",
+                    "toy": "T-rex",
+                    "age": 5
+                }
+            ]
+        }
+    ]
+}
