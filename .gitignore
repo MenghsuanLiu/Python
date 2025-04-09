@@ -53,7 +53,9 @@ NLP/Data
 NLP/Library
 NLP/Config
 
-StockV2
+StockV2/Config
+StockV2/shioaji.log
+StockV2/login_org.py
 YOLO
 Python與AI大型語言模型開發班/config
 Python與AI大型語言模型開發班/image

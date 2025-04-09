@@ -12,7 +12,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # 由執行所在位置決定import的方式
 if os.path.basename(os.getcwd()) == "util":
     from EncryptionDecrypt import dectry
-    from Logger import create_logger
+    from Python.MOPS.Util.Logger import create_logger
     logpath = "../log"
 else:
     from util.EncryptionDecrypt import dectry
