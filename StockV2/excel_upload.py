@@ -4,6 +4,8 @@ import pandas as pd
 import json
 import os
 import shioaji as sj
+from tkcalendar import DateEntry  # 新增 import
+from datetime import datetime
 
 class ExcelUploadWindow:
     def __init__(self, username):
@@ -45,6 +47,19 @@ class ExcelUploadWindow:
         ttk.Button(button_frame, text="下載Excel範例", 
                   command=self.download_template).pack(side="left", padx=5)
 
+        # 新增日期選擇框架
+        date_frame = ttk.Frame(self.main_frame)
+        date_frame.pack(fill="x", pady=5)
+        ttk.Label(date_frame, text="最近交易日期:").pack(side="left", padx=5)
+        self.date_picker = DateEntry(date_frame, width=12, 
+                                   background='darkblue',
+                                   foreground='white',
+                                   borderwidth=2,
+                                   date_pattern='yyyy-mm-dd',
+                                   locale='zh_TW')
+        self.date_picker.pack(side="left", padx=5)
+        self.date_picker.bind("<<DateEntrySelected>>", self.update_closing_prices)
+
         # 建立表格框架
         self.table_frame = ttk.Frame(self.main_frame)
         self.table_frame.pack(fill="both", expand=True)
@@ -61,6 +76,10 @@ class ExcelUploadWindow:
         self.del_row_btn = ttk.Button(table_buttons_frame, text="刪除列", 
                                      command=self.delete_row, state="disabled")
         self.del_row_btn.pack(side="left", padx=5)
+
+        self.clear_btn = ttk.Button(table_buttons_frame, text="清除資料", 
+                                   command=self.clear_data, state="disabled")
+        self.clear_btn.pack(side="left", padx=5)
 
         # 建立 Treeview 用於顯示數據
         self.tree = ttk.Treeview(self.table_frame)
@@ -99,6 +118,25 @@ class ExcelUploadWindow:
         scrollbar.pack(side="right", fill="y")
         self.message_text.configure(yscrollcommand=scrollbar.set)
 
+        # 登入功能
+    def login_api(self):
+        # 讀取登入資訊
+        config_path = os.path.join(os.path.dirname(__file__), 'config', 'init.json')
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+            login_info = config['login']
+
+        # 初始化API
+        api = sj.Shioaji()
+        
+        # 登入
+        api.login(
+            login_info['token'],
+            login_info['key'],
+            contracts_cb=lambda security_type: print(f"{security_type} fetch done.")
+        )
+        return api
+    
     def show_message(self, message, level="info"):
         color = {
             "info": "black",
@@ -130,6 +168,51 @@ class ExcelUploadWindow:
         state = "normal" if enable else "disabled"
         self.add_row_btn.configure(state=state)
         self.del_row_btn.configure(state=state)
+        self.clear_btn.configure(state=state)
+
+    def update_closing_prices(self, event=None):
+        if self.df is None:
+            return
+            
+        try:
+            # 取得選擇的日期
+            selected_date = self.date_picker.get_date()
+            date_str = selected_date.strftime('%Y/%m/%d')
+
+            # 呼叫登入函數
+            api = self.login_api()
+
+            # 更新收盤價
+            closing_prices = []
+            limit_up_prices = []
+            limit_down_prices = []
+            
+            for stock_id in self.df['股號']:
+                try:
+                    contract = api.Contracts.Stocks[str(stock_id)]
+                    if contract.update_date != date_str:
+                        closing_prices.append(None)
+                        limit_up_prices.append(None)
+                        limit_down_prices.append(None)
+                    else:
+                        closing_prices.append(contract.reference)
+                        limit_up_prices.append(contract.limit_up)
+                        limit_down_prices.append(contract.limit_down)
+                except Exception as e:
+                    self.show_message(f"無法取得股票 {stock_id} 的價格資訊: {str(e)}", "warning")
+                    closing_prices.append(None)
+                    limit_up_prices.append(None)
+                    limit_down_prices.append(None)
+
+            # 更新DataFrame和表格
+            self.df['收盤價'] = closing_prices
+            self.df['漲停價'] = limit_up_prices
+            self.df['跌停價'] = limit_down_prices
+            self.update_table()
+            self.show_message(f"已更新收盤價 (日期: {date_str})")
+            api.logout()
+        except Exception as e:
+            self.show_message(f"更新收盤價失敗：{str(e)}", "error")
 
     def upload_excel(self):
         try:
@@ -138,30 +221,49 @@ class ExcelUploadWindow:
             )
             if file_path:
                 self.df = pd.read_excel(file_path)
-                self.update_table()
-                self.update_button_states(True)  # 啟用按鈕
+                # 新增價格欄位
+                if '漲停價' not in self.df.columns:
+                    self.df['漲停價'] = None
+                if '跌停價' not in self.df.columns:
+                    self.df['跌停價'] = None
+                if '收盤價' not in self.df.columns:
+                    self.df['收盤價'] = None
+                    
+                self.update_closing_prices()
+                self.update_button_states(True)
                 self.show_message("Excel 檔案上傳成功！")
         except Exception as e:
             self.show_message(f"上傳失敗：{str(e)}", "error")
-            self.update_button_states(False)  # 確保按鈕保持禁用
+            self.update_button_states(False)
 
     def update_table(self):
         # 清空現有表格
         for item in self.tree.get_children():
             self.tree.delete(item)
 
-        # 設定欄位
-        self.tree["columns"] = list(self.df.columns)
+        # 設定欄位 (加入序號欄位)
+        columns = ['序號'] + list(self.df.columns)
+        self.tree["columns"] = columns
         self.tree["show"] = "headings"
 
         # 設定欄位標題
-        for column in self.df.columns:
+        for column in columns:
             self.tree.heading(column, text=column)
             self.tree.column(column, width=100)
+            
+            # 設定欄位對齊方式
+            if column == '序號':
+                self.tree.column(column, anchor='center')  # 置中對齊
+                self.tree.tag_configure('seq_column', background='#E8E8E8')
+            elif column in ['股號', '股名']:
+                self.tree.column(column, anchor='w')  # 靠左對齊
+            else:
+                self.tree.column(column, anchor='e')  # 靠右對齊
 
-        # 插入數據
+        # 插入數據 (加入序號)
         for i, row in self.df.iterrows():
-            self.tree.insert("", "end", values=list(row))
+            values = [str(i+1)] + list(row)
+            self.tree.insert("", "end", values=values, tags=('seq_column',))
 
     def save_changes(self):
         try:
@@ -260,21 +362,8 @@ class ExcelUploadWindow:
             return
             
         try:
-            # 讀取登入資訊
-            config_path = os.path.join(os.path.dirname(__file__), 'config', 'init.json')
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-                login_info = config['login']
-
-            # 初始化API
-            api = sj.Shioaji()
-            
-            # 登入
-            api.login(
-                login_info['token'],
-                login_info['key'],
-                contracts_cb=lambda security_type: print(f"{security_type} fetch done.")
-            )
+            # 呼叫登入函數
+            api = self.login_api()
 
             # 憑證登入 - 使用使用者的ID和CA路徑
             api.activate_ca(
@@ -301,8 +390,7 @@ class ExcelUploadWindow:
             self.show_message(api.stock_account)
             self.show_message(self.user_id)
             self.show_message(self.ca_path)
-            # api.logout()
-            # return
+
             # 處理每一筆股票下單
             for _, row in self.df.iterrows():
                 stock_id = str(row['股號'])
@@ -353,8 +441,9 @@ class ExcelUploadWindow:
                 pass
 
     def add_row(self):
-        # 新增空白列
-        empty_row = [""] * len(self.tree["columns"])
+        # 新增空白列 (包含序號)
+        row_count = len(self.tree.get_children()) + 1
+        empty_row = [str(row_count)] + [""] * len(self.df.columns if self.df is not None else 3)
         self.tree.insert("", "end", values=empty_row)
         self.save_table_to_df()
 
@@ -371,14 +460,22 @@ class ExcelUploadWindow:
         self.save_table_to_df()
         self.show_message("已刪除選中的列")
 
+    def clear_data(self):
+        self.df = None
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        self.update_button_states(False)
+        self.show_message("已清除所有資料")
+
     def save_table_to_df(self):
-        # 將表格數據保存到DataFrame
+        # 將表格數據保存到DataFrame (排除序號欄位)
         data = []
         for item in self.tree.get_children():
-            data.append(self.tree.item(item)["values"])
+            values = self.tree.item(item)["values"]
+            data.append(values[1:])  # 排除序號欄位
         
         if data:  # 確保有數據
-            self.df = pd.DataFrame(data, columns=self.tree["columns"])
+            self.df = pd.DataFrame(data, columns=self.df.columns)
         else:
             self.df = None
 
