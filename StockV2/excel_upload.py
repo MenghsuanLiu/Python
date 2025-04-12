@@ -403,10 +403,8 @@ class ExcelUploadWindow:
                 # 根據price欄位決定價格和價格類型
                 if price_type == 'L':
                     price = contract.limit_down
-                    order_price_type = "LMT"
                 elif price_type == 'H':
                     price = contract.limit_up
-                    order_price_type = "LMT"
                 elif price_type == '0':
                     price = 0
                     order_price_type = "MKT"
