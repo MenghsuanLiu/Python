@@ -4,8 +4,9 @@ import pandas as pd
 import json
 import os
 import shioaji as sj
-from tkcalendar import DateEntry  # 新增 import
 from datetime import datetime
+import math
+import requests  # Add this import at the top with other imports
 
 class ExcelUploadWindow:
     def __init__(self, username):
@@ -47,26 +48,47 @@ class ExcelUploadWindow:
         ttk.Button(button_frame, text="下載Excel範例", 
                   command=self.download_template).pack(side="left", padx=5)
 
-        # 新增日期選擇框架
-        date_frame = ttk.Frame(self.main_frame)
-        date_frame.pack(fill="x", pady=5)
-        ttk.Label(date_frame, text="最近交易日期:").pack(side="left", padx=5)
-        self.date_picker = DateEntry(date_frame, width=12, 
-                                   background='darkblue',
-                                   foreground='white',
-                                   borderwidth=2,
-                                   date_pattern='yyyy-mm-dd',
-                                   locale='zh_TW')
-        self.date_picker.pack(side="left", padx=5)
-        self.date_picker.bind("<<DateEntrySelected>>", self.update_closing_prices)
-
         # 建立表格框架
         self.table_frame = ttk.Frame(self.main_frame)
         self.table_frame.pack(fill="both", expand=True)
+
+        # 新增總金額框架 (在表格框下方)
+        total_frame = ttk.Frame(self.table_frame)
+        total_frame.pack(fill="x", pady=5)
         
-        # 新增表格操作按鈕框架
-        table_buttons_frame = ttk.Frame(self.table_frame)
-        table_buttons_frame.pack(fill="x", pady=5)
+        # 建立總金額標籤並靠右對齊
+        self.total_label = ttk.Label(total_frame, text="總預計費用: 0")
+        self.total_label.pack(side="right", padx=5)
+        
+        # 建立上方工具列框架
+        tools_frame = ttk.Frame(self.table_frame)
+        tools_frame.pack(fill="x", pady=5)
+        
+        # 金額輸入框移到右側
+        amount_frame = ttk.Frame(tools_frame)
+        amount_frame.pack(side="right", padx=10)
+        ttk.Label(amount_frame, text="輸入每檔目標金額:").pack(side="left")
+        
+        # 驗證函數
+        def validate_amount(P):
+            if len(P) > 5:  # 限制長度
+                return False
+            if P == "":  # 允許空值
+                return True
+            return P.isdigit()  # 只允許數字
+        
+        vcmd = self.root.register(validate_amount)
+        self.amount_entry = ttk.Entry(amount_frame, width=10, 
+                                    validate="key",
+                                    validatecommand=(vcmd, '%P'),
+                                    justify='right')
+        self.amount_entry.pack(side="left")
+        self.amount_entry.insert(0, "100")
+        self.amount_entry.bind('<KeyRelease>', self.on_amount_change)
+
+        # 表格操作按鈕框架
+        table_buttons_frame = ttk.Frame(tools_frame)
+        table_buttons_frame.pack(side="left", fill="x")
         
         # 建立按鈕並設定為禁用狀態
         self.add_row_btn = ttk.Button(table_buttons_frame, text="新增列", 
@@ -118,6 +140,9 @@ class ExcelUploadWindow:
         scrollbar.pack(side="right", fill="y")
         self.message_text.configure(yscrollcommand=scrollbar.set)
 
+        # Add after tree configuration
+        self.tree.tag_configure('price_diff', background='yellow')
+
         # 登入功能
     def login_api(self):
         # 讀取登入資訊
@@ -168,51 +193,51 @@ class ExcelUploadWindow:
         state = "normal" if enable else "disabled"
         self.add_row_btn.configure(state=state)
         self.del_row_btn.configure(state=state)
-        self.clear_btn.configure(state=state)
+        self.clear_btn.configure(state="error")
 
-    def update_closing_prices(self, event=None):
-        if self.df is None:
-            return
-            
-        try:
-            # 取得選擇的日期
-            selected_date = self.date_picker.get_date()
-            date_str = selected_date.strftime('%Y/%m/%d')
-
-            # 呼叫登入函數
-            api = self.login_api()
-
-            # 更新收盤價
-            closing_prices = []
-            limit_up_prices = []
-            limit_down_prices = []
-            
-            for stock_id in self.df['股號']:
-                try:
-                    contract = api.Contracts.Stocks[str(stock_id)]
-                    if contract.update_date != date_str:
-                        closing_prices.append(None)
-                        limit_up_prices.append(None)
-                        limit_down_prices.append(None)
-                    else:
-                        closing_prices.append(contract.reference)
-                        limit_up_prices.append(contract.limit_up)
-                        limit_down_prices.append(contract.limit_down)
-                except Exception as e:
-                    self.show_message(f"無法取得股票 {stock_id} 的價格資訊: {str(e)}", "warning")
-                    closing_prices.append(None)
-                    limit_up_prices.append(None)
-                    limit_down_prices.append(None)
-
-            # 更新DataFrame和表格
-            self.df['收盤價'] = closing_prices
-            self.df['漲停價'] = limit_up_prices
-            self.df['跌停價'] = limit_down_prices
+    def on_amount_change(self, event=None):
+        if self.df is not None:
+            self.recalculate_qty()
             self.update_table()
-            self.show_message(f"已更新收盤價 (日期: {date_str})")
-            api.logout()
+
+    def calculate_total_amount(self):
+        if self.df is not None and 'Amount' in self.df.columns:
+            total = int(round(self.df['Amount'].sum()))  # 改為無條件捨去到整數
+            self.total_label.config(text=f"總預計費用: {total:,}")
+
+    def recalculate_qty(self):
+        target_amount = int(self.amount_entry.get())
+        for index, row in self.df.iterrows():
+            try:
+                price = float(row['price'])
+                if price > 0:
+                    qty = math.ceil(target_amount / price)
+                    self.df.at[index, 'Qty'] = qty
+                    self.df.at[index, 'Amount'] = round(qty * price, 1)
+            except:
+                continue
+        self.calculate_total_amount()  # 更新總金額
+
+    def get_stock_data(self):
+        """從TWSE和TPEx API取得每日交易資料"""
+        stock_data = {}
+        try:
+            # 取得上市資料
+            twse_url = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
+            twse_response = requests.get(twse_url)
+            if twse_response.status_code == 200:
+                stock_data.update({item['Code']: item['ClosingPrice'] for item in twse_response.json()})
+            
+            # 取得上櫃資料
+            tpex_url = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes"
+            tpex_response = requests.get(tpex_url)
+            if tpex_response.status_code == 200:
+                stock_data.update({item['SecuritiesCompanyCode']: item['Close'] for item in tpex_response.json()})
+            
+            return stock_data
         except Exception as e:
-            self.show_message(f"更新收盤價失敗：{str(e)}", "error")
+            self.show_message(f"取得股價資料失敗: {str(e)}", "warning")
+            return {}
 
     def upload_excel(self):
         try:
@@ -221,16 +246,72 @@ class ExcelUploadWindow:
             )
             if file_path:
                 self.df = pd.read_excel(file_path)
-                # 新增價格欄位
+                # 新增價格欄位和股票名稱欄位
+                if 'StockName' not in self.df.columns:
+                    self.df.insert(
+                        list(self.df.columns).index('StockID') + 1, 
+                        'StockName', 
+                        None
+                    )
                 if '漲停價' not in self.df.columns:
                     self.df['漲停價'] = None
                 if '跌停價' not in self.df.columns:
                     self.df['跌停價'] = None
                 if '收盤價' not in self.df.columns:
-                    self.df['收盤價'] = None
-                    
-                self.update_closing_prices()
+                    漲停價_idx = self.df.columns.get_loc('漲停價') if '漲停價' in self.df.columns else len(self.df.columns)
+                    self.df.insert(漲停價_idx, '收盤價', None)
+                if 'Qty' not in self.df.columns:
+                    price_idx = list(self.df.columns).index('price')
+                    self.df.insert(price_idx + 1, 'Qty', None)
+                if 'Amount' not in self.df.columns:
+                    qty_idx = list(self.df.columns).index('Qty')
+                    self.df.insert(qty_idx + 1, 'Amount', None)
+                if 'Close' not in self.df.columns:
+                    收盤價_idx = self.df.columns.get_loc('收盤價') if '收盤價' in self.df.columns else len(self.df.columns)
+                    self.df.insert(收盤價_idx + 1, 'Close', None)
+
+                # 取得TWSE資料
+                twse_data = self.get_stock_data()  # 修改方法名稱
+                
+                # 取得價格資訊
+                api = self.login_api()
+                target_amount = int(self.amount_entry.get())
+                
+                for index, row in self.df.iterrows():
+                    try:
+                        stock_id = str(row['StockID'])
+                        contract = api.Contracts.Stocks[stock_id]
+                        self.df.at[index, 'StockName'] = contract.name
+                        self.df.at[index, '收盤價'] = contract.reference
+                        self.df.at[index, '漲停價'] = contract.limit_up
+                        self.df.at[index, '跌停價'] = contract.limit_down
+                        # Add TWSE closing price
+                        self.df.at[index, 'Close'] = twse_data.get(stock_id, None)
+                        
+                        # 處理 price 欄位的特殊值
+                        price_value = str(row['price'])
+                        if price_value == '-':
+                            price = contract.limit_down
+                            self.df.at[index, 'price'] = price
+                        elif price_value == '+':
+                            price = contract.limit_up
+                            self.df.at[index, 'price'] = price
+                        else:
+                            price = float(price_value)
+                            
+                        # 計算可買數量和金額 (金額到小數點1位)
+                        if price > 0:
+                            qty = math.ceil(target_amount / price)
+                            self.df.at[index, 'Qty'] = qty
+                            self.df.at[index, 'Amount'] = round(qty * price, 1)
+                            
+                    except Exception as e:
+                        self.show_message(f"無法取得股票 {row['StockID']} 的資訊: {str(e)}", "warning")
+                
+                api.logout()
+                self.update_table()
                 self.update_button_states(True)
+                self.calculate_total_amount()  # 更新總金額
                 self.show_message("Excel 檔案上傳成功！")
         except Exception as e:
             self.show_message(f"上傳失敗：{str(e)}", "error")
@@ -255,15 +336,28 @@ class ExcelUploadWindow:
             if column == '序號':
                 self.tree.column(column, anchor='center')  # 置中對齊
                 self.tree.tag_configure('seq_column', background='#E8E8E8')
-            elif column in ['股號', '股名']:
-                self.tree.column(column, anchor='w')  # 靠左對齊
+            elif column in ['StockID', 'StockName']:  # 加入 StockName 靠左對齊
+                self.tree.column(column, anchor='w')
+            elif column in ['Qty', 'price', 'Amount', '漲停價', '跌停價', '收盤價', 'Close']:
+                self.tree.column(column, anchor='e')
             else:
-                self.tree.column(column, anchor='e')  # 靠右對齊
+                self.tree.column(column, anchor='e')
 
         # 插入數據 (加入序號)
         for i, row in self.df.iterrows():
             values = [str(i+1)] + list(row)
-            self.tree.insert("", "end", values=values, tags=('seq_column',))
+            tags = ['seq_column']
+            
+            # 檢查收盤價和Close是否不同
+            try:
+                close = float(row['Close']) if pd.notna(row['Close']) else None
+                ref_close = float(row['收盤價']) if pd.notna(row['收盤價']) else None
+                if close is not None and ref_close is not None and abs(close - ref_close) > 0.01:
+                    tags.append('price_diff')
+            except:
+                pass
+                
+            self.tree.insert("", "end", values=values, tags=tuple(tags))
 
     def save_changes(self):
         try:
@@ -291,9 +385,15 @@ class ExcelUploadWindow:
         if not item or not column:
             return
 
-        # 獲取欄位索引
+        # 獲取欄位索引及名稱
         col_num = int(column[1]) - 1
+        col_name = self.tree["columns"][col_num]
         
+        # 檢查是否為不可編輯的欄位
+        protected_columns = ['序號', 'StockName', 'Amount', '收盤價', 'Close', '漲停價', '跌停價']
+        if col_name in protected_columns:
+            return
+
         # 獲取單元格資訊
         cell_value = self.tree.item(item)['values'][col_num]
 
@@ -329,18 +429,44 @@ class ExcelUploadWindow:
             current_values[col_num] = new_value
             self.tree.item(item, values=current_values)
             
+            # 取得欄位名稱
+            col_name = self.tree["columns"][col_num]
+            
+            # 如果修改的是price或Qty,重新計算Amount
+            if col_name in ['price', 'Qty']:
+                try:
+                    # 取得目前列的price和qty值
+                    item_values = self.tree.item(item)['values']
+                    price_idx = self.tree["columns"].index('price')
+                    qty_idx = self.tree["columns"].index('Qty')
+                    price = float(item_values[price_idx])
+                    qty = int(item_values[qty_idx])
+                    
+                    # 計算新的Amount
+                    amount = round(price * qty, 1)
+                    
+                    # 更新Amount欄位
+                    amount_idx = self.tree["columns"].index('Amount')
+                    current_values[amount_idx] = amount
+                    self.tree.item(item, values=current_values)
+                    
+                    # 更新DataFrame
+                    self.save_table_to_df()
+                    
+                    # 重新計算總金額
+                    self.calculate_total_amount()
+                except:
+                    pass
+            
             # 刪除編輯框
             self.entry_popup.destroy()
             self.entry_popup = None
 
     def download_template(self):
         try:
-            # 建立範例DataFrame
             template_df = pd.DataFrame({
-                '股號': ['2330', '2317', '6770'],
-                '股名': ['台積電', '鴻海', '力積電'],
-                '下單數量(股)': [1, 1, 5],
-                'price': ["L", "H", 13.0]  # 新增價格欄位
+                'StockID': ['2330', '2317', '6770'],
+                'price': ["-", "+", "13.0"]  # 更新範例，使用 "-" 和 "+" 符號
             })
             
             # 讓使用者選擇存檔位置
@@ -355,6 +481,24 @@ class ExcelUploadWindow:
                 self.show_message("範例檔案已下載！")
         except Exception as e:
             self.show_message(f"下載範例失敗：{str(e)}", "error")
+
+    def save_skipped_orders(self, skipped_orders):
+        """存儲未下單的資料"""
+        if skipped_orders:
+            try:
+                df_skipped = pd.DataFrame(skipped_orders)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"skipped_orders_{timestamp}.xlsx"
+                filepath = filedialog.asksaveasfilename(
+                    defaultextension='.xlsx',
+                    filetypes=[("Excel files", "*.xlsx")],
+                    initialfile=filename
+                )
+                if filepath:
+                    df_skipped.to_excel(filepath, index=False)
+                    self.show_message(f"未下單資料已儲存至: {filepath}")
+            except Exception as e:
+                self.show_message(f"儲存未下單資料失敗: {str(e)}", "error")
 
     def generate_order(self):
         if self.df is None:
@@ -391,43 +535,55 @@ class ExcelUploadWindow:
             self.show_message(self.user_id)
             self.show_message(self.ca_path)
 
+            # 初始化未下單清單
+            skipped_orders = []
+            
             # 處理每一筆股票下單
             for _, row in self.df.iterrows():
-                stock_id = str(row['股號'])
-                quantity = int(row['下單數量(股)'])
-                price_type = str(row['price']).upper()
+                stock_id = str(row['StockID'])  # 修改欄位名稱
                 
-                # 取得商品資訊
-                contract = api.Contracts.Stocks[stock_id]
+                # 檢查收盤價與Close是否不同
+                try:
+                    close = float(row['Close']) if pd.notna(row['Close']) else None
+                    ref_close = float(row['收盤價']) if pd.notna(row['收盤價']) else None
+                    price = row['price']
+                    
+                    # 檢查是否要跳過下單
+                    if (close is not None and ref_close is not None and 
+                        abs(close - ref_close) > 0.01 and 
+                        (str(price) in [str(row['漲停價']), str(row['跌停價'])])):
+                        skipped_orders.append(row.to_dict())
+                        self.show_message(f"股票 {stock_id} 收盤價不一致且為漲跌停價，不進行下單", "warning")
+                        continue
+                        
+                    quantity = int(row['Qty'])
+                    contract = api.Contracts.Stocks[stock_id]
+                    
+                    # 建立訂單資料
+                    order = api.Order(
+                        price=price,
+                        quantity=quantity,
+                        action="Buy",
+                        price_type="LMT",
+                        order_type="ROD",
+                        order_lot="IntradayOdd",
+                        account=api.stock_account
+                    )
+                    
+                    # 下單
+                    trade = api.place_order(contract, order)
+                    if trade.status.status_code == "0":
+                        self.show_message(f"股票 {stock_id} 下單成功，委託價: {price}，委託書號: {trade.order.ordno}，網路單號: {trade.order.seqno}，狀態: {trade.status.msg}")
+                    else:
+                        self.show_message(f"股票 {stock_id} 下單失敗，委託價: {price}，原因: {trade.status.msg}")
+                        
+                except Exception as e:
+                    self.show_message(f"股票 {stock_id} 下單失敗，原因: {str(e)}", "error")
+                    skipped_orders.append(row.to_dict())
                 
-                # 根據price欄位決定價格和價格類型
-                if price_type == 'L':
-                    price = contract.limit_down
-                elif price_type == 'H':
-                    price = contract.limit_up
-                elif price_type == '0':
-                    price = 0
-                    order_price_type = "MKT"
-                else:
-                    price = float(price_type)
-
-                # 建立訂單資料
-                order = api.Order(
-                    price=price,
-                    quantity=quantity,
-                    action="Buy",
-                    price_type=order_price_type,
-                    order_type="ROD",
-                    order_lot="IntradayOdd",
-                    account=api.stock_account
-                )
-                
-                # 下單
-                trade = api.place_order(contract, order)
-                if trade.status.status_code == "0":
-                    self.show_message(f"股票 {stock_id} 下單成功，委託價: {price}，委託書號: {trade.order.ordno}，網路單號: {trade.order.seqno}，狀態: {trade.status.msg}")
-                else:
-                    self.show_message(f"股票 {stock_id} 下單失敗，委託價: {price}，原因: {trade.status.msg}")
+            # 儲存未下單資料
+            if skipped_orders:
+                self.save_skipped_orders(skipped_orders)
                 
             api.logout()
 
@@ -463,6 +619,7 @@ class ExcelUploadWindow:
         for item in self.tree.get_children():
             self.tree.delete(item)
         self.update_button_states(False)
+        self.total_label.config(text="總預計費用: 0")  # 清除總金額
         self.show_message("已清除所有資料")
 
     def save_table_to_df(self):
@@ -474,6 +631,8 @@ class ExcelUploadWindow:
         
         if data:  # 確保有數據
             self.df = pd.DataFrame(data, columns=self.df.columns)
+            # 重新計算總金額
+            self.calculate_total_amount()
         else:
             self.df = None
 
