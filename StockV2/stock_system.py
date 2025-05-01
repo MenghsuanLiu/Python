@@ -32,7 +32,7 @@ class ExcelUploadWindow:
 
         # 建立主視窗
         self.root = tk.Tk()
-        self.root.title(f"Excel 上傳系統 - {username}")
+        self.root.title(f"永豐批次下單系統 - {username}")
         self.root.geometry("900x600")
 
         # 建立主框架
